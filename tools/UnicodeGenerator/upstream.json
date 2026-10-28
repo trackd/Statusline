@@ -1,0 +1,10 @@
+{
+  "UnicodeVersion": "17.0.0",
+  "Generator": "src/tools/GraphemeTableGen/Program.cs",
+  "Commit": "7d06b26f73ef4bcb78b56647c395251eeee4c2bc",
+  "Repository": "https://github.com/microsoft/terminal",
+  "Iterator": "src/types/CodepointWidthDetector.cpp",
+  "UnicodeDataSha256": "ba9992569dce753d6a142d12829e6d21e67a1e4f93ab9c63e31f736150514f0b",
+  "GeneratorSha256": "96ff43e1e437f76d22c1e7501c7e46b89f4f2972f6c376500d75c71b4c266a59",
+  "IteratorSha256": "b41c3a844a313c6f61ae04322440296308830920c21f110034e20ae415ac6d5f"
+}

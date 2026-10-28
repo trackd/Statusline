@@ -1,0 +1,194 @@
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+
+[*.{ps1,psm1,psd1}]
+indent_style = space
+indent_size = 4
+end_of_line = crlf
+
+############################################################
+# Basic file-type formatting
+############################################################
+
+[*.{json,yaml,yml}]
+indent_size = 2
+
+[*.md]
+indent_size = 2
+
+[*.{resx,ruleset,stylecop,xml,xsd,xsl}]
+indent_size = 2
+
+[*.{props,targets,config,nuspec}]
+indent_size = 2
+
+[*.tsv]
+indent_style = tab
+
+############################################################
+# Standard formatting for C# and project files
+############################################################
+
+[*.{cs,csproj}]
+indent_style = space
+indent_size = 4
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+
+############################################################
+# C# / .NET defaults - consolidated for clarity
+############################################################
+
+[*.cs]
+
+# Advisory for editors; Roslyn does not automatically wrap long expressions.
+max_line_length = 120
+
+# Sort using directives with System.* first
+dotnet_sort_system_directives_first = true
+
+# Default analyzer severity for most rules: suggestion (non-breaking for local dev)
+dotnet_analyzer_diagnostic.severity = suggestion
+
+# categories: sensible defaults for repository quality
+# Style: formatting and stylistic suggestions
+dotnet_analyzer_diagnostic.category-Style.severity = warning
+
+# Performance: high-value performance rules treated as errors (e.g. hot-path logging)
+dotnet_analyzer_diagnostic.category-Performance.severity = error
+
+# Naming: recommendations; keep as suggestions to avoid developer friction
+dotnet_analyzer_diagnostic.category-Naming.severity = suggestion
+
+# Maintainability: suggestions for cleaner, maintainable code
+dotnet_analyzer_diagnostic.category-Maintainability.severity = suggestion
+
+# Interoperability: warn about platform/interop issues
+dotnet_analyzer_diagnostic.category-Interoperability.severity = warning
+
+# Design: API design and usage guidance
+dotnet_analyzer_diagnostic.category-Design.severity = warning
+
+# Documentation: XML/docs guidance as suggestions
+dotnet_analyzer_diagnostic.category-Documentation.severity = suggestion
+
+# Globalization: treat important globalization issues as errors (e.g. culture-sensitive formatting)
+dotnet_analyzer_diagnostic.category-Globalization.severity = error
+
+# Reliability: lifecycle/dispose and other reliability concerns - warn by default
+dotnet_analyzer_diagnostic.category-Reliability.severity = warning
+
+# Security: escalate security findings to errors
+dotnet_analyzer_diagnostic.category-Security.severity = error
+
+# Usage: general API usage guidance
+dotnet_analyzer_diagnostic.category-Usage.severity = warning
+
+# Modern C# style preferences (good defaults for .NET 10)
+csharp_style_namespace_declarations = file_scoped
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
+csharp_style_pattern_matching_over_is_with_cast_check = true
+csharp_style_prefer_not_pattern = true
+
+csharp_style_pattern_matching_over_as_with_null_check = true
+csharp_style_inlined_variable_declaration = true
+csharp_style_throw_expression = true
+csharp_style_prefer_switch_expression = true
+csharp_prefer_simple_using_statement = true
+dotnet_style_operator_placement_when_wrapping = end_of_line
+
+# # Prefer pattern-matching null checks (`is null` / `is not null`) over `== null` or ReferenceEquals
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true
+dotnet_diagnostic.IDE0041.severity = warning
+# Also enable related null-check simplification rules
+dotnet_diagnostic.IDE0029.severity = warning
+dotnet_diagnostic.IDE0030.severity = warning
+dotnet_diagnostic.IDE0270.severity = warning
+dotnet_diagnostic.IDE0019.severity = warning
+dotnet_diagnostic.IDE0010.severity = none
+# dotnet_diagnostic.IDE0055.severity = none
+# Explicit primitives and non-apparent results; var when the initializer names the type.
+# Both 'var blocks = new List<StatusLineBlock>()' and target-typed new are readable.
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# Do not suggest compressing readable branches into conditional expressions.
+# Short, obvious ternaries remain a judgment call, not a bulk rewrite requirement.
+dotnet_style_prefer_conditional_expression_over_assignment = false:suggestion
+dotnet_style_prefer_conditional_expression_over_return = false:suggestion
+dotnet_diagnostic.IDE0045.severity = suggestion
+dotnet_diagnostic.IDE0046.severity = suggestion
+
+# # Expression-bodied members where concise
+csharp_style_expression_bodied_methods = when_on_single_line
+csharp_style_expression_bodied_properties = when_on_single_line
+csharp_style_expression_bodied_local_functions = when_on_single_line
+csharp_style_expression_bodied_operators = when_on_single_line
+csharp_style_expression_bodied_constructors = false
+
+# # Naming conventions (kept as suggestions)
+# dotnet_naming_rule.private_fields_should_be_camel_case.severity = suggestion
+# dotnet_naming_rule.private_fields_should_be_camel_case.symbols = private_fields
+# dotnet_naming_rule.private_fields_should_be_camel_case.style = camel_case_underscore
+# dotnet_naming_symbols.private_fields.applicable_kinds = field
+# dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+# dotnet_naming_style.camel_case_underscore.capitalization = camel_case
+# dotnet_naming_style.camel_case_underscore.required_prefix = _
+# csharp_style_unused_value_expression_statement_preference = discard_variable
+
+
+# Helpful IDE rules as suggestions so dotnet-format can apply fixes
+dotnet_diagnostic.IDE0005.severity = suggestion
+dotnet_diagnostic.IDE0059.severity = suggestion
+dotnet_diagnostic.IDE0051.severity = suggestion
+dotnet_diagnostic.IDE0060.severity = suggestion
+dotnet_diagnostic.IDE0058.severity = suggestion
+# Public types live in the StatusLine namespace regardless of folder.
+dotnet_style_namespace_match_folder = false
+dotnet_diagnostic.IDE0130.severity = none
+csharp_style_unused_value_expression_statement_preference = unused_local_variable
+# Nullable reference types are enabled in the project file, not EditorConfig.
+csharp_style_prefer_primary_constructors = false
+dotnet_diagnostic.IDE0072.severity = none
+
+# Formatting / newline preferences
+# prefer Stroustrup
+csharp_new_line_before_open_brace = none
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+# Always braces, even for single-line bodies.
+csharp_prefer_braces = true:warning
+dotnet_diagnostic.IDE0011.severity = warning
+# Keep { get; } auto-properties compact; statements always go on separate lines.
+csharp_preserve_single_line_blocks = true
+csharp_preserve_single_line_statements = false
+# Readability: blank lines around blocks, no stacked statements.
+dotnet_style_allow_multiple_blank_lines_experimental = false
+dotnet_diagnostic.IDE2000.severity = warning
+# IDE2001 misreads end-of-line braces as embedded statements; csharp_prefer_braces covers it.
+csharp_style_allow_embedded_statements_on_same_line_experimental = true
+dotnet_diagnostic.IDE2001.severity = none
+csharp_style_allow_blank_lines_between_consecutive_braces_experimental = false
+dotnet_diagnostic.IDE2002.severity = warning
+dotnet_style_allow_statement_immediately_after_block_experimental = false
+dotnet_diagnostic.IDE2003.severity = warning
+csharp_style_allow_blank_line_after_colon_in_constructor_initializer_experimental = false
+dotnet_diagnostic.IDE2004.severity = warning
+# Indentation preferences
+csharp_indent_block_contents = true
+csharp_indent_braces = false
+csharp_indent_case_contents = true
+csharp_indent_case_contents_when_block = true
+csharp_indent_switch_labels = true
+csharp_indent_labels = one_less_than_current
+
+
+
+# Using directive placement
+csharp_using_directive_placement = outside_namespace

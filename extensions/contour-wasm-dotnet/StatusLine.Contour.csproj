@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <TargetName>statusline</TargetName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>true</PublishTrimmed>
+    <NativeLib>Shared</NativeLib>
+    <DebugType>none</DebugType>
+    <OptimizationPreference>Size</OptimizationPreference>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BytecodeAlliance.Componentize.DotNet.Wasm.SDK" Version="0.8.0-preview00011" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-rc.1.26306.1" />
+    <Wit Update="wit/world.wit" World="statusline" />
+  </ItemGroup>
+  <!-- Contour consumes the core module; component metadata is for a different linker. -->
+  <Target Name="PrepareContourCoreModule" BeforeTargets="LinkNativeLlvm">
+    <ItemGroup>
+      <CustomLinkerArg Remove="@(CustomLinkerArg)" Condition="$([System.String]::Copy('%(CustomLinkerArg.Identity)').StartsWith('-Wl,--component-type,'))" />
+    </ItemGroup>
+  </Target>
+</Project>
