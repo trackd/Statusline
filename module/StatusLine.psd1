@@ -1,6 +1,6 @@
 @{
     RootModule = 'StatusLine.dll'
-    ModuleVersion = '0.1.0'
+    ModuleVersion = '0.2.0'
     GUID = '5ee48f8d-7f90-4f03-83d9-569c92cb56fa'
     Author = 'trackd'
     Description = 'Shared-block PowerShell prompts and DEC host-writable status lines with background updates.'
