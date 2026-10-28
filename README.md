@@ -17,12 +17,17 @@ Importing StatusLine leaves your prompt alone. Enable the features you want, whe
 
 ## Previews
 
+### Prompt
+
 ![Plain, Powerline, two-row, and transient prompt examples](docs/images/prompts.png)
 
-![System and project status-line examples](docs/images/statuslines.png)
+### Statusline
+
+![Session, project, and muted and blue-to-orange gradient status-line examples](docs/images/statuslines.png)
 
 Run [Show-Examples.ps1](tools/Show-Examples.ps1) to preview these layouts in one terminal.
 These images capture the preview commands' rendered output; command text, exit codes, and durations are examples.
+Rows labelled "sample" use fixed session counts, weather, uptime, CPU, and RAM values.
 
 ## Install
 
