@@ -1,0 +1,33 @@
+using System.Management.Automation;
+
+namespace StatusLine;
+
+public sealed partial record StatusLineState {
+    // PowerShell exposes local enumeration through Get-Runspace, but its SDK GetRunspaces
+    // overloads enumerate remote runspaces. Cache the same local snapshot getter the cmdlet uses.
+    private static readonly Func<IReadOnlyList<System.Management.Automation.Runspaces.Runspace>>? LocalRunspaces =
+        typeof(System.Management.Automation.Runspaces.Runspace).GetProperty("RunspaceList", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)?
+            .GetMethod?.CreateDelegate<Func<IReadOnlyList<System.Management.Automation.Runspaces.Runspace>>>();
+    /// <summary>
+    /// Captures session facts on the calling runspace thread. Background providers consume the
+    /// resulting immutable snapshot instead of accessing live PowerShell session state.
+    /// </summary>
+    internal static StatusLineState Capture(SessionState sessionState, SessionFacts facts = SessionFacts.All) {
+        try {
+            PathInfo? location = facts.HasFlag(SessionFacts.Location) ? sessionState.Path.CurrentLocation : null;
+            return new StatusLineState {
+                Location = location?.Path,
+                ErrorCount = facts.HasFlag(SessionFacts.Errors) ? (sessionState.PSVariable.GetValue("global:Error") as System.Collections.ICollection)?.Count ?? 0 : 0,
+                StackCount = facts.HasFlag(SessionFacts.Stack) ? sessionState.Path.LocationStack(string.Empty).Count : 0,
+                NestedPromptLevel = facts.HasFlag(SessionFacts.NestedPrompt) && LanguagePrimitives.TryConvertTo(sessionState.PSVariable.GetValue("NestedPromptLevel"), out int depth) ? depth : 0,
+                RunspaceCount = facts.HasFlag(SessionFacts.Runspaces) ? LocalRunspaces?.Invoke().Count ?? 0 : 0,
+                FileSystemPath = location?.Provider.Name == "FileSystem" ? location.ProviderPath : null,
+                LastExitCode = facts.HasFlag(SessionFacts.ExitCode) && sessionState.PSVariable.GetValue("global:LASTEXITCODE") is { } raw && LanguagePrimitives.TryConvertTo(raw, out int code) ? code : null,
+            };
+        }
+        catch (InvalidOperationException) {
+            // The session is mid-change (e.g. switching drives); the next tick will read it again.
+            return new StatusLineState();
+        }
+    }
+}

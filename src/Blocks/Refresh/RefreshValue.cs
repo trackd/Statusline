@@ -15,7 +15,9 @@ internal static class RefreshWorkers {
     internal static long NextCollectionId() => Interlocked.Increment(ref nextCollection);
 }
 
-internal sealed class RefreshValue<T> : IDisposable {
+internal sealed partial class RefreshValue<T> : IDisposable {
+    static partial void NotifyRefresh();
+
     internal long CollectionId { get; } = RefreshWorkers.NextCollectionId();
     private readonly Lock gate = new();
     private T? value;
@@ -108,7 +110,7 @@ internal sealed class RefreshValue<T> : IDisposable {
         }
         finally {
             completed.TrySetResult();
-            StatusLineUpdater.Wake();
+            NotifyRefresh();
         }
 
         // Observe late faults and discard late results before permitting another refresh.

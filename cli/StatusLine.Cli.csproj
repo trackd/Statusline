@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>statusline</AssemblyName>
+    <RootNamespace>StatusLine.Cli</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <StripSymbols>true</StripSymbols>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OptimizationPreference>Size</OptimizationPreference>
+    <DebuggerSupport>false</DebuggerSupport>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <Http3Support>false</Http3Support>
+  </PropertyGroup>
+  <!-- Compile the portable implementation into this executable. The module still
+       compiles these files itself: no shared runtime assembly is introduced. -->
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <Compile Include="../src/Rendering/**/*.cs" Exclude="../src/Rendering/Colors/Colors.cs" />
+    <Compile Include="../src/Platform/**/*.cs" />
+    <Compile Include="../src/Terminal/Vt*.cs;../src/Terminal/StatusLineModes.cs" />
+    <Compile Include="../src/Terminal/TerminalCapabilities.cs;../src/Terminal/TerminalProcessDetector.cs" />
+    <Compile Include="../src/Prompt/Integration/ShellMarkers.cs;../src/Prompt/Integration/ShellIntegrationProfile.cs;../src/Prompt/Integration/WorkingDirectoryMarkers.cs" />
+    <Compile Include="../src/StatusBar/StatusFile.cs" />
+    <Compile Include="../src/Blocks/BlockOptions.cs;../src/Blocks/DirectoryDisplay.cs;../src/Blocks/StatusLineBlock.cs" />
+    <Compile Include="../src/Blocks/BuiltIns/**/*.cs" />
+    <Compile Include="../src/Blocks/Execution/BlockCatalog.cs;../src/Blocks/Execution/BlockContent.cs;../src/Blocks/Execution/BlockContext.cs;../src/Blocks/Execution/BlockContracts.cs;../src/Blocks/Execution/BlockFormatting.cs;../src/Blocks/Execution/BuiltInRefresh.cs" />
+    <Compile Include="../src/Blocks/Refresh/RefreshValue.cs;../src/Blocks/Refresh/SegmentRefreshStatus.cs" />
+    <Compile Include="../src/Blocks/Refresh/RefreshActivity.cs" />
+    <Compile Include="../src/Session/StatusLineState.cs" />
+    <Compile Include="../src/Utility/GlobalUsings.cs;../src/Utility/StringBuilderCache.cs;../src/Utility/ProcessRunner.cs;../src/Utility/ProjectReader.cs;../src/Utility/ProviderEnvironment.cs" />
+    <EmbeddedResource Include="Shells/*" LogicalName="StatusLine.Shells.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

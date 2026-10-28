@@ -1,0 +1,53 @@
+# Bash 5+; evaluate with: eval "$(statusline init bash)"
+if (( BASH_VERSINFO[0] < 5 )); then
+    printf '%s\n' 'statusline requires Bash 5 or newer' >&2
+else
+    _statusline_executable=__STATUSLINE_EXECUTABLE__
+    _statusline_config=__STATUSLINE_CONFIG__
+    _statusline_status_file=__STATUSLINE_STATUS_FILE__
+    if [[ -z ${_statusline_loaded-} ]]; then
+        _statusline_loaded=1
+        _statusline_started=0
+        _statusline_duration=''
+        _statusline_status=0
+        _statusline_start_options=(--parent-pid "$$")
+        [[ -z $_statusline_config ]] || _statusline_start_options+=(--config "$_statusline_config")
+        [[ -z $_statusline_status_file ]] || _statusline_start_options+=(--status-file "$_statusline_status_file")
+        _statusline_session=$("$_statusline_executable" start "${_statusline_start_options[@]}")
+        if [[ __STATUSLINE_TRANSIENT__ == 1 ]]; then
+            printf '%s\n' 'statusline: transient redraw is supported in Zsh and Fish 4.1+, not Bash yet.' >&2
+        fi
+
+        _statusline_precmd() {
+            _statusline_status=$? _statusline_pipeline=("${PIPESTATUS[@]}")
+            local now=${EPOCHREALTIME//[!0-9]/}
+            _statusline_duration=''
+            if (( _statusline_started > 0 )); then
+                _statusline_duration=$(( (now - _statusline_started) / 1000 ))
+            fi
+            _statusline_started=0
+            return "$_statusline_status"
+        }
+
+        _statusline_call() {
+            local command=$1
+            shift
+            local options=(--shell bash --cwd "$PWD" --width "${COLUMNS:-120}" --status "$_statusline_status")
+            options+=(--session "$_statusline_session" --parent-pid "$$")
+            [[ -z $_statusline_config ]] || options+=(--config "$_statusline_config")
+            [[ -z $_statusline_status_file ]] || options+=(--status-file "$_statusline_status_file")
+            [[ -z $_statusline_duration ]] || options+=(--duration-ms "$_statusline_duration")
+            "$_statusline_executable" "$command" "${options[@]}" "$@"
+        }
+
+        _statusline_prompt() { _statusline_call prompt; }
+        _statusline_execute() { _statusline_call command-start; }
+
+        # A zero-length substring assigns the start time without printing it.
+        PS0='${_statusline_started:0:$((_statusline_started=${EPOCHREALTIME//[!0-9]/},0))}$(_statusline_execute)'"${PS0-}"
+        PROMPT_COMMAND=(_statusline_precmd "${PROMPT_COMMAND[@]}")
+        # Substitution output is literal; branch/path text is never evaluated as shell source.
+        PS1='$(_statusline_prompt)'
+        shopt -s promptvars
+    fi
+fi

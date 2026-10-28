@@ -2,10 +2,6 @@ using System.Management.Automation.Runspaces;
 
 namespace StatusLine;
 
-/// <summary>Last refresh outcome; IsStale means the last attempt failed or exceeded its deadline.</summary>
-public sealed record SegmentRefreshStatus(string Name, string Path, DateTime? LastUpdated, string? LastError,
-    bool IsStale, bool IsRefreshing, long CollectionId, int TimeoutMilliseconds, Guid? Owner);
-
 /// <summary>Read-only diagnostics for shared built-in caches and this runspace's script definitions.</summary>
 public static class RefreshDiagnostics {
     public static string? LastStatusLineError => StatusLineUpdater.LastError;

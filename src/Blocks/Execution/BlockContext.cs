@@ -1,7 +1,7 @@
 namespace StatusLine.Blocks.Execution;
 
 /// <summary>Session facts that built-in blocks are created from.</summary>
-internal sealed record BlockContext {
+internal sealed partial record BlockContext {
     public DateTimeOffset Timestamp { get; init; } = TimeProvider.System.GetLocalNow();
     public StatusLineState State { get; init; } = new();
 
@@ -15,8 +15,6 @@ internal sealed record BlockContext {
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
     public bool DurationWarning { get; init; }
     public string? WeatherLocation { get; init; }
-
-    public Guid RunspaceId { get; init; } = System.Management.Automation.Runspaces.Runspace.DefaultRunspace?.InstanceId ?? Guid.Empty;
 }
 
 /// <summary>Caller-supplied replacements for each kind's default layout and colors.</summary>

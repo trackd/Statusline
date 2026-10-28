@@ -1,0 +1,43 @@
+# Evaluate with: statusline init fish | source
+set -g _statusline_executable __STATUSLINE_EXECUTABLE__
+set -g _statusline_config __STATUSLINE_CONFIG__
+set -g _statusline_status_file __STATUSLINE_STATUS_FILE__
+if not set -q _statusline_session
+    set -l options --parent-pid $fish_pid
+    test -z "$_statusline_config"; or set -a options --config "$_statusline_config"
+    test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+    set -g _statusline_session ("$_statusline_executable" start $options)
+end
+
+if test __STATUSLINE_TRANSIENT__ = 1
+    set -l parts (string split . $version)
+    if test $parts[1] -gt 4; or begin; test $parts[1] -eq 4; and test $parts[2] -ge 1; end
+        set -g fish_transient_prompt 1
+    else
+        printf '%s\n' 'statusline: transient prompts require Fish 4.1 or newer.' >&2
+    end
+end
+
+function _statusline_execute --on-event fish_preexec
+    set -l options --session "$_statusline_session" --parent-pid $fish_pid --command "$argv[1]"
+    test -z "$_statusline_config"; or set -a options --config "$_statusline_config"
+    test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+    "$_statusline_executable" command-start $options
+end
+
+function fish_prompt
+    set -l last_status $status
+    set -l command prompt
+    if contains -- --final-rendering $argv; and test __STATUSLINE_TRANSIENT__ = 1
+        set command transient
+    end
+    set -l options --session "$_statusline_session" --parent-pid $fish_pid --shell fish --cwd "$PWD" --width $COLUMNS --status $last_status
+    if test -n "$_statusline_config"
+        set -a options --config "$_statusline_config"
+    end
+    test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+    if set -q CMD_DURATION; and test "$CMD_DURATION" -ge 0
+        set -a options --duration-ms "$CMD_DURATION"
+    end
+    "$_statusline_executable" $command $options
+end

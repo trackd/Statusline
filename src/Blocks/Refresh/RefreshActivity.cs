@@ -11,6 +11,7 @@ internal sealed class RefreshActivity {
     private long lastActivity = Stopwatch.GetTimestamp();
     private int idle;
     public bool IsIdle => Volatile.Read(ref idle) != 0;
+    public TimeSpan InactiveFor => Stopwatch.GetElapsedTime(Interlocked.Read(ref lastActivity));
     public void Touch() {
         Interlocked.Exchange(ref lastActivity, Stopwatch.GetTimestamp());
         Volatile.Write(ref idle, 0);

@@ -1,0 +1,18 @@
+{
+  "Left": ["Directory", "Git", "Status", "Duration"],
+  "Right": ["Node", "Python", "Dotnet", "Package"],
+  "Rows": 2,
+  "Transient": true,
+  "ShellIntegration": "Auto",
+  "StartColor": "#0400fdff",
+  "EndColor": "#ff7b00ff",
+  "DirectoryStyle": "Home",
+  "IconSet": "NerdFont",
+  "StatusLine": {
+    "Left": ["Git"],
+    "Center": ["Uptime"],
+    "Right": ["Cpu", "SystemMemory", "Clock"],
+    "StartColor": "#0400fdff",
+    "EndColor": "#ff7b00ff"
+  }
+}

@@ -23,6 +23,12 @@ env:
   DOTNET_NOLOGO: '1'
 
 jobs:
+  native:
+    name: Build native binaries
+    uses: ./.github/workflows/native.yml
+    with:
+      version: ${{ inputs.version || '' }}
+
   validate:
     name: Build and test (${{ matrix.os }})
     strategy:
