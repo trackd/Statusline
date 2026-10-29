@@ -2,7 +2,10 @@
 param(
     [ValidateSet('linux-x64', 'linux-arm64', 'win-x64', 'win-arm64', 'osx-x64', 'osx-arm64')]
     [string]$RuntimeIdentifier,
-    [string]$OutputPath
+    [string]$OutputPath,
+    [ValidateSet('Size', 'Speed')]
+    [string]$OptimizationPreference = 'Speed',
+    [switch]$VerifyTerminalIntegration
 )
 $ErrorActionPreference = 'Stop'
 $platformName = if ($IsWindows) { 'win' } elseif ($IsMacOS) { 'osx' } else { 'linux' }
@@ -19,12 +22,17 @@ if (-not $OutputPath) {
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
 $manifest = Import-PowerShellDataFile (Join-Path $PSScriptRoot '../module/StatusLine.psd1')
+$previousUpstreamRoot = $env:STATUSLINE_UPSTREAM_INTEGRATION_ROOT
 Push-Location $PSScriptRoot
 try {
+    if ($VerifyTerminalIntegration.IsPresent) {
+        if (-not $IsLinux) { throw 'Terminal integration PTY checks currently require Linux.' }
+        $env:STATUSLINE_UPSTREAM_INTEGRATION_ROOT = & ./tests/Save-UpstreamIntegration.ps1
+    }
     $arguments = @(
         'publish', 'StatusLine.Cli.csproj', '--configuration', 'Release',
         '--runtime', $RuntimeIdentifier, '--output', $OutputPath,
-        "-p:Version=$($manifest.ModuleVersion)", "-bl:$OutputPath/publish.binlog"
+        "-p:Version=$($manifest.ModuleVersion)", "-p:OptimizationPreference=$OptimizationPreference", "-bl:$OutputPath/publish.binlog"
     )
     & dotnet @arguments
     if ($LASTEXITCODE) { throw "Native publish failed with exit code $LASTEXITCODE." }
@@ -60,5 +68,6 @@ try {
     [IO.File]::WriteAllText("$archivePath.sha256", "$checksum  $([IO.Path]::GetFileName($archivePath))`n", [Text.UTF8Encoding]::new($false))
 }
 finally {
+    $env:STATUSLINE_UPSTREAM_INTEGRATION_ROOT = $previousUpstreamRoot
     Pop-Location
 }

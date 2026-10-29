@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Buffers;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
@@ -17,12 +18,14 @@ internal sealed class SessionRequest {
     public string? CommandLine { get; set; }
     public string? ConfigPath { get; set; }
     public string? StatusFile { get; set; }
+    public ExternalIntegration ExternalIntegration { get; set; }
 }
 
 internal sealed class SessionResponse {
     public int WorkerPid { get; set; } = Environment.ProcessId;
     public int ParentPid { get; set; }
     public string Output { get; set; } = string.Empty;
+    public string Prelude { get; set; } = string.Empty;
     public string? Error { get; set; }
     public bool RestartRequired { get; set; }
     public string? StatusFile { get; set; }
@@ -34,6 +37,8 @@ internal sealed class SessionResponse {
     public bool RefreshPaused { get; set; }
     public string? ConfigPath { get; set; }
     public string[] ProviderErrors { get; set; } = [];
+    public string? ShellInput { get; set; }
+    public string? ShellOutput { get; set; }
 }
 
 internal sealed class SessionOwner {
@@ -45,6 +50,19 @@ internal sealed class SessionOwner {
 
 internal static class SessionProtocol {
     internal const int MaximumMessage = 65536;
+    internal static readonly string[] ShellVariables = ["PATH", "VIRTUAL_ENV", "CONDA_PREFIX", "CONDA_DEFAULT_ENV", "KUBECONFIG", "DOCKER_CONTEXT",
+        "HOME", "USERPROFILE", "DOTNET_ROOT", "RUSTUP_TOOLCHAIN", "JAVA_HOME", "PYENV_VERSION", "RBENV_VERSION", "TERM_PROGRAM", "TERM",
+        "WT_SESSION", "VSCODE_SHELL_INTEGRATION", "AWS_PROFILE", "AWS_DEFAULT_PROFILE", "AZURE_SUBSCRIPTION_ID"];
+
+    internal static void RegisterOwner(string session, int parentPid, string? config, string? statusFile) {
+        using var parent = Process.GetProcessById(parentPid);
+        if (parent.HasExited) { throw new IOException("The owning shell has exited."); }
+        var owner = new SessionOwner { ParentPid = parentPid, ParentStarted = ParentIdentity(parent), ConfigPath = config, StatusFile = statusFile };
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows()) { options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite; }
+        using var file = new FileStream(OwnerFile(session), options);
+        JsonSerializer.Serialize(file, owner, ConfigurationJson.Default.SessionOwner);
+    }
 
     private static string OwnerFile(string session) {
         _ = PipeName(session);
@@ -101,25 +119,29 @@ internal static class SessionProtocol {
     internal static string EnvironmentKey() => string.Join('\0',
         ProviderEnvironment.Fingerprint, Environment.GetEnvironmentVariable("TERM_PROGRAM"),
         Environment.GetEnvironmentVariable("TERM"), Environment.GetEnvironmentVariable("WT_SESSION"),
-        Environment.GetEnvironmentVariable("VSCODE_SHELL_INTEGRATION"));
+        Environment.GetEnvironmentVariable("VSCODE_SHELL_INTEGRATION"),
+        Environment.GetEnvironmentVariable("AWS_PROFILE"), Environment.GetEnvironmentVariable("AWS_DEFAULT_PROFILE"),
+        Environment.GetEnvironmentVariable("AZURE_SUBSCRIPTION_ID"));
 
     internal static string ConfigKey(string? config) => config is null ? "" :
         File.GetLastWriteTimeUtc(config).Ticks + ":" + new FileInfo(config).Length;
 
     internal static async Task<string> ReadLine(StreamReader reader, CancellationToken token) {
         // Bound allocation even if a local client sends a malformed request without a newline.
-        var text = new System.Text.StringBuilder();
-        var buffer = new char[1];
-        while (await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false) != 0) {
-            if (buffer[0] == '\n') {
-                return text.ToString();
+        var text = new StringBuilder();
+        char[] buffer = ArrayPool<char>.Shared.Rent(1024);
+        try {
+            int count;
+            while ((count = await reader.ReadAsync(buffer.AsMemory(0, 1024), token).ConfigureAwait(false)) != 0) {
+                int newline = buffer.AsSpan(0, count).IndexOf('\n');
+                int length = newline < 0 ? count : newline;
+                if (text.Length + length > MaximumMessage) { throw new IOException("Session message exceeds 64 KiB."); }
+                text.Append(buffer.AsSpan(0, length));
+                if (newline >= 0) { return text.ToString(); }
             }
-            if (text.Length >= MaximumMessage) {
-                throw new IOException("Session message exceeds 64 KiB.");
-            }
-            text.Append(buffer[0]);
+            throw new EndOfStreamException("Session connection closed.");
         }
-        throw new EndOfStreamException("Session connection closed.");
+        finally { ArrayPool<char>.Shared.Return(buffer); }
     }
 
     internal static SessionResponse Send(string session, SessionRequest request, int timeout = 3000) {
@@ -139,7 +161,7 @@ internal static class SessionProtocol {
             ?? throw new IOException("Empty worker response.");
     }
 
-    internal static void Start(string session, int parentPid, string? config, string? statusFile) {
+    internal static void Start(string session, int parentPid, string? config, string? statusFile, bool shellPipes = false) {
         _ = PipeName(session);
         using var parent = Process.GetProcessById(parentPid);
         if (parent.HasExited) {
@@ -160,7 +182,10 @@ internal static class SessionProtocol {
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
-        foreach (string argument in new[] { "worker", "--session", session, "--parent-pid", parentPid.ToString(System.Globalization.CultureInfo.InvariantCulture) }) {
+        // The worker must not inherit the launcher's caller-facing capture pipes.
+        // On Windows, whitelist only its own redirected standard handles.
+        if (OperatingSystem.IsWindows()) { start.InheritedHandles = []; }
+        foreach (string argument in new[] { shellPipes ? "worker-shell" : "worker", "--session", session, "--parent-pid", parentPid.ToString(System.Globalization.CultureInfo.InvariantCulture) }) {
             start.ArgumentList.Add(argument);
         }
         if (config is not null) {

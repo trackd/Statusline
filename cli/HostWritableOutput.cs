@@ -9,6 +9,7 @@ namespace StatusLine.Cli;
 internal sealed partial class HostWritableOutput : IDisposable {
     private readonly FileStream terminal;
     private bool active;
+    private bool initialize;
     private string? previous;
     private int previousWidth;
 
@@ -16,7 +17,9 @@ internal sealed partial class HostWritableOutput : IDisposable {
         if (OperatingSystem.IsWindows()) {
             throw new ArgumentException("CLI HostWritable currently requires a Unix controlling terminal; use file output on Windows.");
         }
-        if (!TerminalCapabilities.Detect().HostWritableStatusLine) {
+        TerminalCapability capability = TerminalCapabilities.Detect();
+        if (!capability.HostWritableStatusLine &&
+            (capability.Name.Equals("ghostty", StringComparison.OrdinalIgnoreCase) || !TerminfoCapabilities.HasDecStatusLine())) {
             throw new ArgumentException("This terminal is not known to support HostWritable status lines.");
         }
         terminal = new FileStream("/dev/tty", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, bufferSize: 1);
@@ -31,12 +34,16 @@ internal sealed partial class HostWritableOutput : IDisposable {
     internal void Write(string text, int width) {
         if (active && text == previous && width == previousWidth) { return; }
         // One write keeps display selection, content and restoration together.
-        byte[] frame = Encoding.UTF8.GetBytes(Vt.StatusText(text, initialize: !active));
+        byte[] frame = Encoding.UTF8.GetBytes(Vt.StatusText(text, initialize: !active || initialize));
         terminal.Write(frame);
         active = true;
+        initialize = false;
         previous = text;
         previousWidth = width;
     }
+
+    // A nested shell or full-screen command may have replaced or hidden the area.
+    internal void Invalidate() { previous = null; initialize = true; }
 
     public void Dispose() {
         try {

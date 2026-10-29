@@ -354,5 +354,8 @@ ref/**
 !README.md
 !docs/images/*.png
 !docs/en-US/*.md
+/docs/Native[Cc][Ll][Ii]-Review.md
+/cli/distribution/README.md
+/tools/NativePerformance/
 artifacts/*
 extension/*

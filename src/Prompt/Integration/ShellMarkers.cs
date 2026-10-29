@@ -7,17 +7,17 @@ internal static class ShellMarkers {
             return progress;
         }
 
-        string cwd = !string.IsNullOrEmpty(path) && Path.IsPathFullyQualified(path)
+        string cwd = !profile.IsExternal(ExternalIntegration.WorkingDirectory) && !string.IsNullOrEmpty(path) && Path.IsPathFullyQualified(path)
             ? WorkingDirectoryMarkers.Create(profile, path) : string.Empty;
         string finished = string.Empty;
-        if (exitCode is { } code) {
+        if (!profile.IsExternal(ExternalIntegration.OutputEnd) && exitCode is { } code) {
             finished = Vt.OutputEnd(profile.MarkerNumber, code);
         }
-        else if (finish) {
+        else if (!profile.IsExternal(ExternalIntegration.OutputEnd) && finish) {
             finished = Vt.OutputEnd(profile.MarkerNumber);
         }
 
-        return finished + progress + (profile.ReflowControl ? Vt.DisableReflow : string.Empty) +
+        return finished + progress + (profile.ReflowControl && !profile.IsExternal(ExternalIntegration.Reflow) ? Vt.DisableReflow : string.Empty) +
             profile.PromptStart + (profile.Protocol == ShellIntegration.Osc633
                 ? Vt.VsCodeWindowsProperty(OperatingSystem.IsWindows()) : string.Empty) + cwd;
     }
@@ -27,6 +27,9 @@ internal static class ShellMarkers {
         if (profile.Protocol == ShellIntegration.None) {
             return progress;
         }
+
+        string reflow = profile.ReflowControl && !profile.IsExternal(ExternalIntegration.Reflow) ? Vt.EnableReflow : string.Empty;
+        if (profile.IsExternal(ExternalIntegration.OutputStart)) { return reflow + progress; }
 
         string metadata = string.Empty;
         if (profile.Metadata == CommandMetadata.VsCode && command is not null) {
@@ -41,9 +44,9 @@ internal static class ShellMarkers {
         }
 
         if (profile.Metadata == CommandMetadata.Contour && command is not null) {
-            return Vt.EnableReflow + progress + Vt.ContourCommand(Uri.EscapeDataString(command));
+            return reflow + progress + Vt.ContourCommand(Uri.EscapeDataString(command));
         }
 
-        return metadata + progress + Vt.OutputStart(profile.MarkerNumber);
+        return reflow + metadata + progress + Vt.OutputStart(profile.MarkerNumber);
     }
 }

@@ -50,6 +50,8 @@ internal static partial class Vt {
 
     internal static string PromptStart(int protocol) => $"\e]{protocol};A{Bell}";
     internal static string InputStart(int protocol) => $"\e]{protocol};B{Bell}";
+    internal const string InputPrompt = "\e]133;P;k=i\a";
+    internal const string SecondaryPrompt = "\e]133;P;k=s\a";
     internal static string OutputStart(int protocol) => $"\e]{protocol};C{Bell}";
     internal static string OutputEnd(int protocol) => $"\e]{protocol};D{Bell}";
     internal static string OutputEnd(int protocol, int exitCode) => $"\e]{protocol};D;{exitCode}{Bell}";

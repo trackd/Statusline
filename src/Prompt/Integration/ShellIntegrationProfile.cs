@@ -8,6 +8,8 @@ internal enum CommandMetadata {
 
 /// <summary>Terminal-specific syntax, resolved once for an installed prompt rather than inferred from an OSC number.</summary>
 internal readonly record struct ShellIntegrationProfile {
+    private readonly string promptStart;
+    private readonly string inputStart;
     public ShellIntegrationProfile(string terminal, ShellIntegration protocol, string workingDirectory,
         CommandMetadata metadata, bool reflowControl, bool context) {
         Terminal = terminal;
@@ -16,12 +18,8 @@ internal readonly record struct ShellIntegrationProfile {
         Metadata = metadata;
         ReflowControl = reflowControl;
         Context = context;
-        PromptStart = string.Empty;
-        CommandStart = string.Empty;
-        if (protocol != ShellIntegration.None) {
-            PromptStart = Vt.PromptStart(MarkerNumber);
-            CommandStart = Vt.InputStart(MarkerNumber);
-        }
+        promptStart = protocol == ShellIntegration.None ? string.Empty : Vt.PromptStart(MarkerNumber);
+        inputStart = protocol == ShellIntegration.None ? string.Empty : Vt.InputStart(MarkerNumber);
     }
 
     public string Terminal { get; }
@@ -31,8 +29,17 @@ internal readonly record struct ShellIntegrationProfile {
     public bool ReflowControl { get; }
     public bool Context { get; }
     public int MarkerNumber => Protocol == ShellIntegration.Osc633 ? 633 : 133;
-    public string PromptStart { get; }
-    public string CommandStart { get; }
+    public ExternalIntegration External { get; init; }
+    public bool IsExternal(ExternalIntegration feature) => (External & feature) != 0;
+    public string PromptStart => IsExternal(ExternalIntegration.PromptStart) ? string.Empty : promptStart;
+    public string CommandStart => IsExternal(ExternalIntegration.InputStart) ? string.Empty : inputStart;
+    public static ShellIntegrationProfile ResolveForShell(ShellIntegration requested, ExternalIntegration external) {
+        ShellIntegrationProfile profile = Resolve(requested);
+        if (requested != ShellIntegration.Auto || profile.Protocol != ShellIntegration.Osc133) { return profile; }
+        if (profile.WorkingDirectory != "OSC 7") { external &= ~ExternalIntegration.WorkingDirectory; }
+        return profile with { External = external };
+    }
+
     public static ShellIntegrationProfile Resolve(ShellIntegration requested) {
         string terminal = TerminalCapabilities.Detect().Name.ToLowerInvariant();
         ShellIntegration protocol = TerminalCapabilities.Resolve(requested);

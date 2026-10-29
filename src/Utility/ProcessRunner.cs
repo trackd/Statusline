@@ -9,6 +9,9 @@ internal static class ProcessRunner {
         start.CreateNoWindow = true;
         start.RedirectStandardOutput = true;
         start.RedirectStandardError = true;
+#if NET11_0_OR_GREATER
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsWindows()) { start.KillOnParentExit = true; }
+#endif
         using var process = new Process { StartInfo = start };
         process.Start();
         Task<string> output = process.StandardOutput.ReadToEndAsync(token);

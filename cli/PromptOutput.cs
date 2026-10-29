@@ -34,19 +34,26 @@ internal static class PromptOutput {
         Append(options.Right, StatusLineAlignment.Right);
         Color start = options.StartColor is { } first ? NamedColors.Parse(first) : Color.Empty;
         Color end = options.EndColor is { } last ? NamedColors.Parse(last) : Color.Empty;
-        IReadOnlyList<StatusLineBlock> colored = BlockGradient.Apply(blocks, start, end, options.Style);
         if (statusLine) {
-            return StatusLineRenderer.RenderBlocks(colored, width, options.BlockSeparator, options.Style,
-                useCursorPositioning: false, roundOuterEdges: true);
+            return StatusLineRenderer.RenderBlocks(blocks, width, options.BlockSeparator, options.Style,
+                useCursorPositioning: false, blendBackground: options.BlendBackground,
+                textContrast: options.TextContrast, roundOuterEdges: true, startColor: start, endColor: end);
         }
         string symbol = TerminalText.Clip(TerminalText.Sanitize(options.Symbol, keepStyles: false), width - 1).Sequence;
         if (options.Rows == 2) {
-            return StatusLineRenderer.RenderBlocks(colored, width - 1, options.BlockSeparator, options.Style,
-                useCursorPositioning: false, roundOuterEdges: true) + Vt.Reset + "\n" + symbol;
+            return StatusLineRenderer.RenderBlocks(blocks, width - 1, options.BlockSeparator, options.Style,
+                useCursorPositioning: false, blendBackground: options.BlendBackground,
+                textContrast: options.TextContrast, roundOuterEdges: true, startColor: start, endColor: end) + Vt.Reset + "\n" + symbol;
         }
         int budget = Math.Max(0, width - 1 - TerminalText.Measure(symbol) - Math.Min(20, (width - 1) / 2));
+        if (options.BlendBackground) {
+            return StatusLineRenderer.RenderBlocks(blocks, budget, options.BlockSeparator, options.Style,
+                useCursorPositioning: false, blendBackground: true, textContrast: options.TextContrast,
+                roundOuterEdges: true, startColor: start, endColor: end) + Vt.Reset + symbol;
+        }
+        IReadOnlyList<StatusLineBlock> colored = BlockGradient.Apply(blocks, start, end, options.Style);
         return StatusLineRenderer.RenderGroup(colored, StatusLineAlignment.Left, budget,
-            options.BlockSeparator, options.Style, roundOuterEdges: true).Sequence + Vt.Reset + symbol;
+            options.BlockSeparator, options.Style, textContrast: options.TextContrast, roundOuterEdges: true).Sequence + Vt.Reset + symbol;
 
         void Append(IEnumerable<string> names, StatusLineAlignment alignment) {
             foreach (string name in names) {
@@ -66,8 +73,9 @@ internal static class PromptOutput {
         if (options.Rows is not (1 or 2) || options.BlockTimeoutMilliseconds is < 1 or > 60000) {
             throw new ArgumentException("Rows must be 1 or 2; BlockTimeoutMilliseconds must be between 1 and 60000.");
         }
-        if (!Enum.IsDefined(options.Style) || !Enum.IsDefined(options.IconSet) || !Enum.IsDefined(options.DirectoryStyle) || !Enum.IsDefined(options.ShellIntegration)) {
-            throw new ArgumentException("Style, IconSet, and DirectoryStyle must be defined values.");
+        if (!Enum.IsDefined(options.Style) || !Enum.IsDefined(options.IconSet) || !Enum.IsDefined(options.DirectoryStyle) ||
+            !Enum.IsDefined(options.ShellIntegration) || !Enum.IsDefined(options.TextContrast)) {
+            throw new ArgumentException("Style, IconSet, DirectoryStyle, ShellIntegration, and TextContrast must be defined values.");
         }
         ArgumentNullException.ThrowIfNull(options.Left);
         ArgumentNullException.ThrowIfNull(options.Right);

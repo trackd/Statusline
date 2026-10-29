@@ -1,33 +1,12 @@
 # StatusLine in Bash, Zsh and Fish
 
-The PowerShell module remains a single `StatusLine.dll`. The executable compiles the
-same rendering, Unicode, built-in providers, platform readers and refresh code from
-`src/` directly. It has no PowerShell or shared Core DLL dependency. PowerShell session
-capture, runspace identity and refresh wake-up callbacks stay in `src/PowerShell/`;
-cmdlets and script-block execution remain module-only.
-
-## Build
-
-Native AOT must be published on the target operating system. For Linux x64, use a
-.NET 10 SDK and its native prerequisites (on Ubuntu: `clang` and `zlib1g-dev`). The
-build script publishes, runs the native executable checks, and creates a package:
-
-```powershell
-pwsh -NoProfile -NonInteractive -File cli/Publish-Native.ps1 -RuntimeIdentifier linux-x64
-```
-
-The `statusline` executable runs independently of `dotnet` or PowerShell. Unix packages
-use tar.gz to retain the executable bit. The separate
-`.dbg` file is optional debug information. The existing module build remains unchanged:
-
-```powershell
-pwsh -NoProfile -File ./build.ps1 -BuildAndTestOnly -SkipHelp
-```
+StatusLine provides a configurable prompt and an asynchronously refreshed status
+bar. The CLI is a single native executable and runs without PowerShell or a .NET
+runtime installation. It shares its renderer and providers with the PowerShell module.
 
 ## Shell setup
 
-Put the executable on `PATH`. Use the appropriate command in your interactive shell
-configuration. Bash requires version 5 or newer for execution timing.
+Put `statusline` on `PATH`, then initialize it in your interactive shell:
 
 ```bash
 eval "$(statusline init bash --config /absolute/path/prompt.json)"
@@ -41,34 +20,40 @@ eval "$(statusline init zsh --config /absolute/path/prompt.json)"
 statusline init fish --config /absolute/path/prompt.json | source
 ```
 
-Omit `--config` to use Directory, Git, Status and Duration. Configuration is JSON;
-see [example.json](example.json). Block names, styles, icon sets and gradient colors
-use the existing module's values. Right/Center prompt groups require `Rows: 2`.
-An explicit width is passed by each shell adapter, along with the last exit code,
-current directory and command duration. Bash/Zsh preserve existing prompt hooks;
-Fish replaces `fish_prompt`. Reinitializing does not duplicate Bash/Zsh hooks.
+Omit `--config` for the default Directory, Git, Status and Duration prompt.
+See [example.json](example.json) for a two-row prompt with runtime providers and a
+separately configured status bar. Right and center prompt groups require `Rows: 2`.
+Use a Nerd Font for icons, or set `"IconSet": "None"`.
 
-Each initialized shell owns a persistent worker. Short CLI calls forward prompt
-state to it; providers keep their asynchronous caches between calls and refresh
-while the shell is idle. The worker exits when its shell exits. The next prompt
-can recover a crashed worker. Configuration or relevant provider-environment changes
-restart the worker so values are not reused across incompatible environments.
+Bash requires version 5 or newer. Transient prompts are supported in Zsh and Fish
+4.1 or newer with `"Transient": true`. Zsh completion registration requires
+`compdef` to be available.
 
-The worker can return a partial initial prompt while slow providers collect, just
-as the module does. Later calls use the collected values. Failed refreshes preserve
-cached values and label them stale. `statusline info --session TOKEN` reports the
-worker PID, status-file error and provider errors for diagnostics.
+### Install a profile hook
+
+Plain `init` prints shell code without changing your profile. Add `--install` to
+install a managed hook, or `--uninstall` to remove it:
+
+```sh
+statusline init bash --config /absolute/path/prompt.json --install
+statusline init bash --uninstall
+```
+
+The same options work for Zsh and Fish. Use `--profile FILE` for a custom location.
+Default locations are:
+
+- Bash: `~/.bashrc`
+- Zsh: `$ZDOTDIR/.zshrc`, or `~/.zshrc`
+- Fish: `$XDG_CONFIG_HOME/fish/conf.d/statusline.fish`, or its equivalent under `~/.config`
+
+Existing profile content, encoding, newlines and symlinks are preserved. The first
+existing profile receives a `.statusline.bak` backup. Quoted `~/...` paths are
+expanded by the CLI. On Linux, omitting the shell name lets `init` infer the calling shell.
 
 ## Live status bar
 
-For a Unix terminal supporting DEC HostWritable status lines (such as Contour),
-set the root configuration property `"Target": "HostWritable"`, then initialize
-the shell normally with `--config`. The worker writes to `/dev/tty`, independently
-of captured prompt output. It refreshes while idle, reads the actual terminal width
-on each tick, and clears/hides the status area when stopped or when its parent shell
-exits. It uses the shared terminal capability detector without consuming shell input;
-unknown/unsupported terminals are rejected. CLI HostWritable on Windows is not yet
-implemented; file output remains available there.
+Contour supports a host-writable status display that updates independently of the
+prompt. Enable it with `"Target": "HostWritable"`:
 
 ```json
 {
@@ -83,108 +68,90 @@ implemented; file output remains available there.
 ```
 
 The optional `StatusLine` object configures the bar separately from the prompt.
-The target defaults to no direct terminal output, so enabling a prompt does not
-implicitly allocate a status area. Abrupt termination such as SIGKILL cannot perform
-terminal cleanup. Other applications which change the terminal status mode may
-require restarting the worker afterward.
+Without it, the bar shows Git, uptime, CPU, system memory and clock. Enabling a
+prompt alone does not allocate a status area.
 
-For file output instead (or alongside HostWritable), add `--status-file`:
+HostWritable currently requires a supported Unix terminal. Ghostty does not
+support this display; its prompt integration remains available. Windows users
+can use file output.
 
-Add `--status-file /absolute/path/statusline.txt` to the initialization command:
+### File output
+
+Add `--status-file` to initialization to write an atomically replaced status file:
 
 ```fish
 statusline init fish --config /absolute/path/prompt.json --status-file /tmp/statusline.txt | source
 ```
 
-The same option works with Bash and Zsh. The worker replaces this file atomically
-and refreshes it while the shell is idle. The optional `StatusLine` object in
-[example.json](example.json) configures its blocks independently of the prompt.
-Without that object it shows Git, uptime, CPU, system memory and clock.
-Use a separate file for each session and an existing parent directory.
+The same option works with Bash and Zsh. Use a separate file for each session and
+an existing parent directory. Contour's command-based indicator can read the file;
+see [file-output configuration](../docs/Configuration.md#file-output-and-contour-program).
+The final frame remains in the file after the worker exits.
 
-This uses Contour's indicator-command target: configure the indicator to read the
-file (for example, `cat /tmp/statusline.txt`). See the existing
-[Contour file-output configuration](../docs/Configuration.md#file-output-and-contour-program).
-File output does not write into the shell's main screen. The final frame remains in
-the file after shutdown; a later session can reuse the path.
+## Refresh and shell integration
 
-## Idle activity and refresh policy
+Each shell owns a persistent worker with asynchronous provider caches. Slow
+providers may be absent from the first prompt; later renders use their collected
+values. Failed refreshes retain cached values and mark them stale. Workers recover
+at the next prompt after a crash and restart when relevant configuration or
+provider environment values change.
 
-The root `IdleTimeoutSeconds` option defaults to 60, matching the PowerShell module;
-zero disables idle pausing. The CLI uses the module's monotonic activity tracker.
-After that many seconds without a prompt or command-start event, background rendering,
-new provider scheduling and status output pause. Already running bounded provider calls
-may finish. Prompt readiness and command acceptance reset the timer. Individual
-keystrokes and terminal visibility are not monitored, and the worker never reads
-terminal input. Diagnostic polling does not count as activity.
+On Linux, Bash, Zsh and Fish reuse persistent connections without launching a CLI
+client for each prompt. macOS Zsh/Fish currently use short-lived clients.
 
-`UpdateDuringCommand` defaults to false, also matching the module. Set it to true
-to keep background refreshes running during commands, subject to the idle timeout.
-These options apply to both file and HostWritable output and the worker's prompt
-provider scheduling. `statusline info --session TOKEN` reports `IdleSeconds`,
-`IsIdle`, `IsCommandExecuting` and `RefreshPaused`.
+`IdleTimeoutSeconds` defaults to 60; set it to 0 to disable idle pausing.
+`UpdateDuringCommand` defaults to false. Set it to true to continue refreshing
+during commands, subject to the idle timeout. Activity is measured from prompt
+and command-start events; individual keystrokes are not monitored.
 
-## Shell integration and transient prompts
+`ShellIntegration: "Auto"` reports prompt/command boundaries and the working
+directory in supported terminals. It defers events already supplied by terminal
+hooks or native Fish marking. Explicit `None`, `Osc133`, `Osc633` and `ITerm2`
+settings are also available. See the [Contour/Ghostty compatibility notes](../docs/ShellIntegration-Compatibility.md)
+for supported behavior and limitations.
 
-`ShellIntegration: "Auto"` follows the module's terminal detection and marker policy.
-It emits command/prompt boundaries and working-directory metadata in supported
-terminals. Explicit `None`, `Osc133`, `Osc633` and `ITerm2` values are also accepted.
-Command text is supplied by Zsh/Fish; Bash emits boundaries without command text.
+A shell started with `sudo -i`, `sudo -s` or `su` needs its own profile hook,
+running as that user. The outer shell's worker pauses during commands by default
+and restores its status area when the prompt returns.
 
-`Transient: true` redraws accepted prompts using `TransientSymbol` in Zsh and
-Fish 4.1 or newer. Fish 3.7 still supports ordinary prompts. Bash transient redraw
-is not implemented; enabling it prints a clear notice and keeps the full prompt.
+## Commands and limitations
 
-`statusline prompt` prints a prompt; `statusline statusline` prints one styled row
-without moving the main terminal cursor. That row can be consumed by Contour's
-command-based indicator. `--shell bash` adds Readline nonprinting markers;
-`--shell zsh` wraps control sequences and escapes literal percent characters.
-Raw/Fish output contains ordinary VT sequences. Paths and branch names are never
-evaluated as shell code.
+Run `statusline --help` for commands and options. Useful standalone commands include:
 
-## Module-specific features
+- `statusline prompt`: render a prompt.
+- `statusline statusline`: render a status row without changing the terminal display.
+- `statusline info --session TOKEN`: inspect worker state and provider errors.
+- `statusline stop --session TOKEN`: stop a worker and restore its terminal state.
 
-PowerShell-specific blocks and `ProcessMemory` are rejected by the CLI. The latter
-currently measures the renderer process; it needs explicit shell-PID semantics before
-being offered to other shells. Script-block definitions remain a module feature.
-One-shot `prompt`/`statusline` calls without a session token remain available for
-scripts. Their caches last only for that invocation. The PowerShell module retains
-its existing in-process behavior and script-block features. Argument/configuration
-errors exit with 2; unavailable providers can be absent from the initial frame.
+Standalone renders without a session token retain caches only for that invocation.
+PowerShell session blocks, script-block providers and `ProcessMemory` remain
+module-only. Abrupt termination such as SIGKILL cannot perform terminal cleanup.
 
-## Installation and binary size
+## Build and test
 
-Plain `statusline init bash|zsh|fish` prints hook code without modifying profiles.
-Add `--install` to explicitly install a managed profile block, or `--uninstall` to
-remove it. `--profile FILE` selects a custom profile. Defaults are `.bashrc`,
-`$ZDOTDIR/.zshrc` (or home), and `$XDG_CONFIG_HOME/fish/conf.d/statusline.fish`
-(or the home configuration directory). Existing content, encoding, newlines and
-symlinks are preserved; the first existing profile gets a `.statusline.bak` backup.
-
-Release builds use Native AOT, full trimming, stripped native symbols and size
-optimization. Reflection-based JSON is disabled in favor of generated serializers.
-Debugger, stack trace, tracing/metrics and unused HTTP protocol features are disabled;
-normal error messages, Unicode and globalization remain available. Stack traces
-therefore require a diagnostic build. Archives include SHA256 checksum files.
-
-See the [distribution plan](distribution/README.md) for package-manager packaging.
-
-## Executable validation
-
-The C# black-box suite uses only the BCL. Linux/glibc checks include real PTYs:
+Building the CLI requires the .NET 11 SDK or newer. Native AOT publishing must run
+on the target operating system; Ubuntu also needs `clang` and `zlib1g-dev`.
 
 ```powershell
-dotnet run --project cli/tests/NativeCli.Tests.csproj -c Release -- /absolute/path/to/statusline
+dotnet build cli/StatusLine.Cli.csproj
+pwsh -NoProfile -NonInteractive -File cli/Publish-Native.ps1 -RuntimeIdentifier linux-x64
 ```
 
-It checks isolated execution, real Git, status/duration, configuration validation,
-grouped rows, cached provider invocation counts, idle status-file changes, stale
-values on provider failure, recovery, parent lifetime, existing hooks, literal
-prompt metacharacters, quoted paths, repeated initialization, resize and Ctrl+C.
-HostWritable PTY checks cover idle refresh, resize without another prompt,
-exit-status propagation, stop/parent-exit cleanup and unsupported terminals.
-Run container tests with `--init` so terminated worker processes are reaped.
-The target-platform CLI/worker checks also run in the native build workflow;
-the PTY fixture is Linux/glibc-specific. macOS and Windows builds await hosted
-validation. Full terminal/plugin coexistence and alternate screens remain outside
-these automated checks.
+The managed build runs trim/AOT compatibility checks without native compilation.
+The publish script builds the executable, runs its checks, and creates an archive
+with a SHA256 checksum. The default module build excludes the CLI; the PowerShell
+module remains a single `StatusLine.dll` targeting .NET 10.
+
+Release builds use full trimming and speed optimization. Select size optimization
+with `-OptimizationPreference Size`; use `-OutputPath` for a separate output directory.
+Native debug symbols are optional and separate from the executable.
+
+To include the pinned Contour/Ghostty integration checks on Linux:
+
+```powershell
+pwsh -NoProfile -NonInteractive -File cli/Publish-Native.ps1 -RuntimeIdentifier linux-x64 -VerifyTerminalIntegration
+```
+
+These checks exercise both integration load orders in Bash, Zsh and Fish PTYs.
+They also run in Linux CI. Live terminal UI behavior still needs manual validation.
+When testing in a container, use `--init` so exited workers are reaped.

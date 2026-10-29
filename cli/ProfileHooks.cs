@@ -7,9 +7,7 @@ internal static class ProfileHooks {
     private const string End = "# <<< StatusLine <<<";
 
     internal static string DefaultPath(string shell) {
-        string home = Environment.GetEnvironmentVariable("HOME")
-            ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrEmpty(home)) { throw new IOException("User home directory is unavailable; supply --profile."); }
+        string home = ShellEnvironment.Home;
         return shell switch {
             "bash" => Path.Combine(home, ".bashrc"),
             "zsh" => Path.Combine(Environment.GetEnvironmentVariable("ZDOTDIR") ?? home, ".zshrc"),
@@ -61,16 +59,21 @@ internal static class ProfileHooks {
             File.Copy(target, target + ".statusline.bak");
         }
         string temporary = Path.Combine(directory, ".statusline-" + Guid.NewGuid().ToString("N"));
+        UnixFileMode? originalMode = OperatingSystem.IsWindows() ? null : info.Exists
+            ? File.GetUnixFileMode(target) : UnixFileMode.UserRead | UnixFileMode.UserWrite;
         try {
             var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
             if (!OperatingSystem.IsWindows()) {
-                options.UnixCreateMode = info.Exists ? File.GetUnixFileMode(target) : UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             }
             using (var file = new FileStream(temporary, options)) {
                 file.Write(encoding.GetPreamble());
                 file.Write(encoding.GetBytes(changed));
                 file.Flush(flushToDisk: true);
             }
+            // Creation permissions are masked by umask; restore the exact original
+            // mode after writing the private temporary file, before replacing it.
+            if (!OperatingSystem.IsWindows() && originalMode is { } mode) { File.SetUnixFileMode(temporary, mode); }
             if (info.Exists) { File.Replace(temporary, target, destinationBackupFileName: null); }
             else { File.Move(temporary, target); }
         }

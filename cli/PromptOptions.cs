@@ -19,6 +19,8 @@ internal sealed class PromptOptions {
     public bool UpdateDuringCommand { get; set; }
     public int Rows { get; set; } = 1;
     public bool BlockSeparator { get; set; }
+    public bool BlendBackground { get; set; }
+    public TextContrastMode TextContrast { get; set; } = TextContrastMode.Automatic;
     public string? StartColor { get; set; }
     public string? EndColor { get; set; }
     public string? WeatherLocation { get; set; }

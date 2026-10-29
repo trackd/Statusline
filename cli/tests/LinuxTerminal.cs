@@ -11,7 +11,7 @@ internal sealed class LinuxTerminal : IDisposable {
     private readonly byte[] buffer = new byte[65536];
     private readonly StringBuilder transcript = new();
 
-    internal LinuxTerminal(string shell, string directory, string termProgram = "") {
+    internal LinuxTerminal(string shell, string directory, string termProgram = "", string term = "xterm-256color") {
         if (Native.openpty(out master, out int slave, buffer, 0, 0) != 0) {
             throw new IOException("openpty failed.");
         }
@@ -24,7 +24,7 @@ internal sealed class LinuxTerminal : IDisposable {
         using var argv = new NativeStrings(arguments);
         var environment = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>()
             .ToDictionary(entry => (string)entry.Key, entry => (string?)entry.Value);
-        environment["TERM"] = "xterm-256color";
+        environment["TERM"] = term;
         environment["TERM_PROGRAM"] = termProgram;
         environment["LC_ALL"] = "C.UTF-8";
         using var env = new NativeStrings(environment.Select(pair => pair.Key + "=" + pair.Value));
@@ -130,6 +130,7 @@ internal sealed class LinuxTerminal : IDisposable {
 }
 
 internal static partial class Native {
+    [LibraryImport("libc")] internal static partial uint umask(uint mask);
     [StructLayout(LayoutKind.Sequential, Size = 80)] internal struct SpawnActions;
     [StructLayout(LayoutKind.Sequential, Size = 336)] internal struct SpawnAttributes;
     [StructLayout(LayoutKind.Sequential)] internal struct WindowSize { internal ushort Rows, Columns, X, Y; }

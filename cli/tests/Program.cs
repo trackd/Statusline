@@ -13,8 +13,11 @@ internal static partial class Program {
     private sealed record TestResult(string Name, bool Passed, string? Error);
 
     public static int Main(string[] args) {
+        if (args is ["--fixture-cleanup"]) { Case("FixtureCleanupRemovesReadOnlyGitObjects", ReadOnlyGitCleanup); return failed == 0 ? 0 : 1; }
+        if (args is ["--worker-start", string workerBinary]) { binary = Path.GetFullPath(workerBinary); Case("WorkerStartupClosesLauncherStreams", WorkerStartupStreams); return failed == 0 ? 0 : 1; }
         if (args is ["--shell-test", string path, string shell]) { binary = Path.GetFullPath(path); Case(shell + "Pty", () => Shell(shell)); return failed == 0 ? 0 : 1; }
         if (args is ["--wait"]) { Thread.Sleep(Timeout.Infinite); return 0; }
+        if (args is ["--upstream-test", string upstreamBinary]) { binary = Path.GetFullPath(upstreamBinary); Case("UpstreamShellIntegrationsCoexistInEitherLoadOrder", UpstreamIntegration); return failed == 0 ? 0 : 1; }
         if (args is ["--version"]) {
             string counter = Environment.GetEnvironmentVariable("STATUSLINE_TEST_COUNTER") ?? throw new IOException("Missing counter.");
             int count = File.Exists(counter) ? int.Parse(File.ReadAllText(counter), CultureInfo.InvariantCulture) : 0;
@@ -27,6 +30,8 @@ internal static partial class Program {
         Case("StandaloneNativeExecutable", Standalone);
         Case("ArgumentAndConfigurationErrors", InvalidInput);
         Case("SharedGitStatusAndDuration", GitData);
+        Case("FixtureCleanupRemovesReadOnlyGitObjects", ReadOnlyGitCleanup);
+        Case("WorkerStartupClosesLauncherStreams", WorkerStartupStreams);
         Case("ShellMarkersAndGroupedRows", Framing);
         Case("WorkerCachesIdleRefreshAndSessionIsolation", Worker);
         Case("WorkerRecoveryAndConfigurationReload", Recovery);
@@ -35,14 +40,33 @@ internal static partial class Program {
         Case("HookDefaultPathsAndSymlink", HookPaths);
         Case("IdleTimeoutPausesAndActivityResumes", IdleTimeout);
         Case("CommandRefreshPolicyAndDisabledIdleTimeout", CommandRefresh);
+        Case("RapidAndFragmentedWorkerRequests", RapidRequests);
+        Case("StatusLineReadPreservesShellSnapshot", StatusRead);
+        Case("CloudEnvironmentChangeRestartsWorker", CloudEnvironment);
+        Case("PortableGradientAndTextContrast", PortableColors);
+        Case("PersistentShellTransportAndEnvironmentRestart", PersistentTransport);
+        Case("TildePathsAndCommandCompletion", PathsAndCompletion);
+        Case("AutomaticIntegrationDefersExternallyOwnedMarkers", IntegrationOwnership);
         if (OperatingSystem.IsLinux() && Environment.Is64BitProcess) {
             Case("BashPty", () => Shell("bash"));
+            Case("BashUsesWorkerWithoutLaunchingPromptClients", BashPersistent);
+            Case("ZshAndFishUseWorkerWithoutLaunchingPromptClients", OtherShellsPersistent);
+            Case("CallingShellDetectionIgnoresOtherProfiles", ShellDetection);
+            Case("FishNativeMarkerOwnershipAcrossVersions", FishOwnershipVersions);
+            Case("GhosttyCachedPromptRedrawKeepsPromptGrouping", GhosttyRedraw);
+            Case("TerminfoEnablesOnlyDecStatusDisplay", Terminfo);
+            if (Environment.UserName == "root" && File.Exists("/usr/bin/su")) { Case("SuIdentityAndPrivateSessionBoundary", SuIdentity); }
             Case("ZshPtyAndTransient", () => Shell("zsh"));
             Case("FishPty", () => Shell("fish"));
             Case("InstalledHooksInRealShells", InstalledHooks);
             Case("HostWritableIdleResizeAndStop", HostWritable);
             Case("HostWritableRejectsUnsupportedTerminal", HostWritableUnsupported);
             Case("HostWritableParentExitCleanup", HostWritableParentExit);
+            Case("ShellInitializationFailureCanRetry", FailedInitialization);
+            Case("ProfilePermissionsSurviveRestrictiveUmask", ProfilePermissions);
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("STATUSLINE_UPSTREAM_INTEGRATION_ROOT"))) {
+                Case("UpstreamShellIntegrationsCoexistInEitherLoadOrder", UpstreamIntegration);
+            }
         }
         else {
             Console.WriteLine("Linux/glibc PTY cases are not run on this host; CLI/worker cases run on every OS.");
@@ -75,6 +99,7 @@ internal static partial class Program {
         Task<string> output = process.StandardOutput.ReadToEndAsync();
         Task<string> error = process.StandardError.ReadToEndAsync();
         if (!process.WaitForExit(15000)) { process.Kill(entireProcessTree: true); throw new IOException("Process timeout: " + executable); }
+        Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         return (process.ExitCode, output.GetAwaiter().GetResult(), error.GetAwaiter().GetResult());
     }
 
@@ -175,6 +200,111 @@ internal static partial class Program {
         return document.RootElement.Clone();
     }
 
+    private static void RapidRequests() {
+        using var fixture = new Fixture(); fixture.Configure(new { Left = new[] { "Status" } });
+        string session = Start(fixture);
+        int owner = WorkerPid(session);
+        for (int index = 0; index < 500; index++) {
+            JsonElement response = Direct(session, "{\"Command\":\"ping\"}", fragment: index == 0);
+            Check(response.GetProperty("WorkerPid").GetInt32() == owner && response.GetProperty("Error").ValueKind == JsonValueKind.Null,
+                "Rapid request failed or worker restarted.");
+        }
+        JsonElement tooLarge = Direct(session, "{\"Command\":\"" + new string('x', 65536) + "\"}");
+        Check(tooLarge.GetProperty("Error").GetString()!.Contains("64 KiB", StringComparison.Ordinal), "Oversized message was not bounded.");
+        Check(WorkerPid(session) == owner, "Oversized client killed the worker.");
+    }
+
+    private static JsonElement Direct(string session, string json, bool fragment = false) {
+        using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", "statusline-" + session,
+            System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous | System.IO.Pipes.PipeOptions.CurrentUserOnly);
+        pipe.Connect(3000);
+        using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(pipe, leaveOpen: true);
+        if (fragment) { writer.Write(json.AsSpan(0, 5)); Thread.Sleep(20); writer.WriteLine(json[5..]); }
+        else { writer.WriteLine(json); }
+        string response = reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult() ?? throw new IOException("No reply.");
+        using var document = JsonDocument.Parse(response);
+        return document.RootElement.Clone();
+    }
+
+    private static void StatusRead() {
+        using var fixture = new Fixture();
+        fixture.Configure(new { Left = new[] { "User" }, IconSet = "None", Style = "Plain",
+            StatusLine = new { Left = new[] { "Directory", "Status", "Duration" }, IconSet = "None", Style = "Plain", DirectoryStyle = "Leaf" } });
+        string file = Path.Combine(fixture.Path, "status.txt");
+        string session = Start(fixture, statusFile: file);
+        _ = Success("prompt", "--session", session, "--cwd", fixture.Path, "--status", "17", "--duration-ms", "1200");
+        string first = Plain(Success("statusline", "--session", session, "--cwd", Path.GetTempPath()));
+        Check(first.Contains("ERR 17", StringComparison.Ordinal) && first.Contains("1.2s", StringComparison.Ordinal)
+            && first.Contains(Path.GetFileName(fixture.Path), StringComparison.Ordinal), "Status read ignored bar config or shell snapshot: " + first);
+        Until(() => File.Exists(file) && ReadStatusFile(file).Contains("ERR 17", StringComparison.Ordinal), "Status read overwrote live shell state.");
+        string standalone = Plain(Success("statusline", "--config", fixture.Config, "--cwd", fixture.Path, "--status", "17", "--duration-ms", "1200"));
+        Check(standalone == first, "One-shot and worker status rendering disagree.");
+    }
+
+    private static void CloudEnvironment() {
+        using var fixture = new Fixture(); fixture.Configure(new { Left = new[] { "Aws", "Azure" }, IconSet = "None", Style = "Plain" });
+        string? aws = Environment.GetEnvironmentVariable("AWS_PROFILE");
+        string? azure = Environment.GetEnvironmentVariable("AZURE_SUBSCRIPTION_ID");
+        try {
+            Environment.SetEnvironmentVariable("AWS_PROFILE", "aws-before"); Environment.SetEnvironmentVariable("AZURE_SUBSCRIPTION_ID", "azure-before");
+            string session = Start(fixture); _ = Render(session, fixture.Path); int before = WorkerPid(session);
+            Environment.SetEnvironmentVariable("AWS_PROFILE", "aws-after"); Environment.SetEnvironmentVariable("AZURE_SUBSCRIPTION_ID", "azure-after");
+            string output = Render(session, fixture.Path);
+            Check(output.Contains("aws-after", StringComparison.Ordinal) && output.Contains("azure-after", StringComparison.Ordinal)
+                && WorkerPid(session) != before, "Cloud environment did not propagate: " + output);
+        }
+        finally { Environment.SetEnvironmentVariable("AWS_PROFILE", aws); Environment.SetEnvironmentVariable("AZURE_SUBSCRIPTION_ID", azure); }
+    }
+
+    private static void PortableColors() {
+        using var fixture = new Fixture();
+        foreach (bool blend in new[] { false, true }) {
+            fixture.Configure(new { Left = new[] { "Status" }, Style = "Powerline", IconSet = "None", StartColor = "#0400fdff", EndColor = "#ff7b00ff",
+                BlendBackground = blend, TextContrast = "White" });
+            string line = Success("statusline", "--config", fixture.Config, "--width", "80");
+            Check(line.Contains("38;2;255;255;255", StringComparison.Ordinal), "Explicit white contrast ignored: " + JsonSerializer.Serialize(line));
+            if (blend) { Check(line.Contains("48;2;4;0;253", StringComparison.Ordinal), "Blended frame did not start at configured color."); }
+        }
+        File.WriteAllText(fixture.Config, "{\"TextContrast\":99}");
+        Check(Cli("prompt", "--config", fixture.Config).Code == 2, "Invalid text contrast accepted.");
+    }
+
+    private static void FailedInitialization() {
+        foreach (string shell in new[] { "bash", "zsh", "fish" }) {
+            using var fixture = new Fixture();
+            fixture.Configure(new { Target = "HostWritable", Left = new[] { "Status" }, Symbol = " __STATUSLINE_READY__ " });
+            using var terminal = new LinuxTerminal(shell, fixture.Path, "kitty");
+            // The old prompt remains usable after the generated hook fails to start.
+            terminal.Send(shell == "fish" ? "function fish_prompt; echo __STATUSLINE_READY__; end\n" : shell == "bash" ? "PS1='__STATUSLINE_READY__'\n" : "PROMPT='__STATUSLINE_READY__'\n");
+            _ = terminal.ReadFor(100);
+            string invocation = Quote(binary) + " init " + shell + " --config " + Quote(fixture.Config);
+            string init = shell == "fish" ? invocation + " | source" : "eval \"$(" + invocation + ")\"";
+            string failure = terminal.Command(init);
+            Check(failure.Contains("not known to support", StringComparison.Ordinal), "Failure fixture did not fail startup.");
+            fixture.Configure(new { Left = new[] { "Status" }, IconSet = "None", Style = "Plain", Symbol = " __STATUSLINE_READY__ " });
+            _ = terminal.Command(init);
+            Check(Plain(terminal.Command("false")).Contains("ERR 1", StringComparison.Ordinal), "Corrected init could not retry in " + shell);
+        }
+    }
+
+    private static void ProfilePermissions() {
+        if (!OperatingSystem.IsLinux()) { throw new InvalidOperationException("Linux umask fixture required."); }
+        using var fixture = new Fixture();
+        string profile = Path.Combine(fixture.Path, "mode-profile");
+        File.WriteAllText(profile, "# original\n");
+        const UnixFileMode mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        File.SetUnixFileMode(profile, mode);
+        uint previous = Native.umask(0x3f); // 077
+        try {
+            _ = Success("init", "bash", "--install", "--profile", profile);
+            Check(File.GetUnixFileMode(profile) == mode, "Install narrowed existing permissions under restrictive umask.");
+            _ = Success("init", "bash", "--uninstall", "--profile", profile);
+            Check(File.GetUnixFileMode(profile) == mode, "Uninstall changed profile permissions.");
+        }
+        finally { _ = Native.umask(previous); }
+    }
+
     private static void IdleTimeout() {
         using var fixture = new Fixture();
         fixture.Configure(new { IdleTimeoutSeconds = 1, Left = new[] { "Status" },
@@ -184,16 +314,16 @@ internal static partial class Program {
         _ = Render(session, fixture.Path);
         Until(() => File.Exists(file), "No initial status frame.");
         Until(() => Info(session).GetProperty("IsIdle").GetBoolean(), "Worker did not become idle.");
-        string frozen = File.ReadAllText(file);
+        string frozen = ReadStatusFile(file);
         double before = Info(session).GetProperty("IdleSeconds").GetDouble();
         Thread.Sleep(1400);
         JsonElement idle = Info(session);
         Check(idle.GetProperty("RefreshPaused").GetBoolean() && idle.GetProperty("IdleSeconds").GetDouble() > before + 1,
             "Diagnostic polling reset idle time or failed to report the pause.");
-        Check(File.ReadAllText(file) == frozen, "Idle worker kept refreshing status output.");
+        Check(ReadStatusFile(file) == frozen, "Idle worker kept refreshing status output.");
         _ = Render(session, fixture.Path);
         Check(!Info(session).GetProperty("IsIdle").GetBoolean(), "Prompt readiness did not resume activity.");
-        Until(() => File.ReadAllText(file) != frozen, "Status output did not resume after prompt readiness.");
+        Until(() => ReadStatusFile(file) != frozen, "Status output did not resume after prompt readiness.");
         Until(() => Info(session).GetProperty("IsIdle").GetBoolean(), "Worker did not idle again.");
         _ = Success("command-start", "--session", session);
         JsonElement executing = Info(session);
@@ -203,6 +333,11 @@ internal static partial class Program {
 
     private static void CommandRefresh() {
         using var fixture = new Fixture();
+        string sharingProbe = Path.Combine(fixture.Path, "reader-sharing.txt");
+        File.WriteAllText(sharingProbe, "complete snapshot");
+        using (var writer = new FileStream(sharingProbe, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)) {
+            Check(ReadStatusFile(sharingProbe) == "complete snapshot", "Status reader conflicts with a replacement writer.");
+        }
         foreach (bool update in new[] { false, true }) {
             fixture.Configure(new { IdleTimeoutSeconds = 0, UpdateDuringCommand = update, Left = new[] { "Status" },
                 StatusLine = new { Left = new[] { "Clock" }, Style = "Plain", IconSet = "None" } });
@@ -211,15 +346,15 @@ internal static partial class Program {
             _ = Render(session, fixture.Path);
             Until(() => File.Exists(file), "Status file was not initialized.");
             _ = Success("command-start", "--session", session);
-            string first = File.ReadAllText(file);
+            string first = ReadStatusFile(file);
             Thread.Sleep(1600);
             JsonElement state = Info(session);
             Check(!state.GetProperty("IsIdle").GetBoolean() && state.GetProperty("IsCommandExecuting").GetBoolean(), "Zero timeout did not disable idle pausing.");
             Check(state.GetProperty("RefreshPaused").GetBoolean() == !update, "Wrong command refresh policy.");
-            Check((File.ReadAllText(file) != first) == update, "Command refresh output disagrees with policy.");
+            Check((ReadStatusFile(file) != first) == update, "Command refresh output disagrees with policy.");
             _ = Render(session, fixture.Path);
             Check(!Info(session).GetProperty("IsCommandExecuting").GetBoolean(), "Prompt did not end command execution.");
-            if (!update) { Until(() => File.ReadAllText(file) != first, "Output did not resume after command completion."); }
+            if (!update) { Until(() => ReadStatusFile(file) != first, "Output did not resume after command completion."); }
             _ = Success("stop", "--session", session);
             fixture.Sessions.Remove(session);
         }
@@ -228,6 +363,13 @@ internal static partial class Program {
     private static string Render(string session, string path) => Plain(Success("prompt", "--session", session,
         "--parent-pid", Environment.ProcessId.ToString(CultureInfo.InvariantCulture), "--cwd", path));
 
+    private static string ReadStatusFile(string path) {
+        // The worker atomically replaces this file. Let the writer publish the next
+        // snapshot while this reader keeps its current snapshot open on Windows.
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
     private static void Until(Func<bool> condition, string message, int milliseconds = 6000) {
         var watch = Stopwatch.StartNew();
         while (!condition()) {
@@ -263,9 +405,9 @@ internal static partial class Program {
             for (int index = 0; index < 20; index++) { Check(Render(session, fixture.Path).Contains("20.1.0", StringComparison.Ordinal), "Lost cached Node value."); }
             Check(File.ReadAllText(counter) == "1", "Node recollected during cached render calls.");
             Check(WorkerPid(session) == pid, "Worker restarted between renders.");
-            Until(() => File.Exists(file) && File.ReadAllText(file).Length > 0, "Status file not created.");
-            string first = File.ReadAllText(file);
-            Until(() => File.ReadAllText(file) != first, "Status file did not refresh while shell was idle.");
+            Until(() => File.Exists(file) && ReadStatusFile(file).Length > 0, "Status file not created.");
+            string first = ReadStatusFile(file);
+            Until(() => ReadStatusFile(file) != first, "Status file did not refresh while shell was idle.");
             string execute = Success("command-start", "--session", session);
             Check(execute.Contains("\x1b]133;C", StringComparison.Ordinal), "Missing execution marker.");
             string prompt = Success("prompt", "--session", session, "--cwd", fixture.Path, "--status", "17");
@@ -346,7 +488,7 @@ internal static partial class Program {
         _ = terminal.Command(initialize);
         if (shell != "fish") {
             string count = shell == "bash" ? "printf 'HOOKS:%s\\n' ${#PROMPT_COMMAND[@]}" : "print HOOKS:${#precmd_functions[@]}";
-            Check(Plain(terminal.Command(count)).Contains("HOOKS:2", StringComparison.Ordinal), "Prompt hooks duplicated.");
+            Check(Plain(terminal.Command(count)).Contains("HOOKS:3", StringComparison.Ordinal), "Prompt hooks duplicated.");
         }
         terminal.Resize(80);
         Check(Plain(terminal.Command("true")).Contains("OK", StringComparison.Ordinal), "Prompt failed after resize.");
@@ -518,19 +660,58 @@ internal static partial class Program {
         Check(ended.Contains("\x1b[0$~", StringComparison.Ordinal), "Parent exit did not hide status area: " + ended);
     }
 
+    private static void ReadOnlyGitCleanup() {
+        var fixture = new Fixture();
+        try {
+            fixture.Git();
+            File.WriteAllText(System.IO.Path.Combine(fixture.Path, "tracked"), "fixture");
+            Check(Run("git", fixture.Path, "add", "tracked").Code == 0, "Git add failed.");
+            Check(Run("git", fixture.Path, "commit", "-qm", "fixture").Code == 0, "Git commit failed.");
+            string transient = System.IO.Path.Combine(fixture.Path, ".git", "objects", "maintenance.lock");
+            File.WriteAllText(transient, "temporary maintenance state");
+            string[] objects = Directory.GetFiles(System.IO.Path.Combine(fixture.Path, ".git", "objects"), "*", SearchOption.AllDirectories)
+                .Where(path => {
+                    string name = System.IO.Path.GetFileName(path);
+                    string? directory = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path));
+                    return name.Length is 38 or 62 && name.All(char.IsAsciiHexDigit) &&
+                        directory is { Length: 2 } && directory.All(char.IsAsciiHexDigit);
+                }).ToArray();
+            File.Delete(transient); // Reproduce a maintenance file disappearing after enumeration.
+            Check(objects.Length > 0, "Git object fixture is empty.");
+            foreach (string path in objects) { File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly); }
+            fixture.Dispose();
+            Check(!Directory.Exists(fixture.Path), "Fixture cleanup left read-only Git objects behind.");
+        }
+        finally {
+            if (Directory.Exists(fixture.Path)) {
+                foreach (string path in Directory.GetFiles(fixture.Path, "*", SearchOption.AllDirectories)) {
+                    File.SetAttributes(path, FileAttributes.Normal);
+                }
+                Directory.Delete(fixture.Path, recursive: true);
+            }
+        }
+    }
+
     private sealed class Fixture : IDisposable {
         internal string Path { get; } = Directory.CreateTempSubdirectory("statusline-cli-").FullName;
         internal string Config => System.IO.Path.Combine(Path, "config 'quoted'.json");
         internal List<string> Sessions { get; } = [];
         internal void Configure(object configuration) => File.WriteAllText(Config, JsonSerializer.Serialize(configuration));
         internal void Git() {
-            foreach (string[] command in new[] { new[] { "init", "-q", "-b", "topic" }, new[] { "config", "user.name", "Test" }, new[] { "config", "user.email", "test@example.invalid" } }) {
+            foreach (string[] command in new[] { new[] { "init", "-q", "-b", "topic" }, new[] { "config", "user.name", "Test" }, new[] { "config", "user.email", "test@example.invalid" }, new[] { "config", "maintenance.auto", "false" }, new[] { "config", "gc.auto", "0" } }) {
                 Check(Run("git", Path, command).Code == 0, "Git fixture initialization failed.");
             }
         }
         public void Dispose() {
             foreach (string session in Sessions) { _ = Cli("stop", "--session", session); }
-            try { Directory.Delete(Path, recursive: true); } catch (IOException) { }
+            if (OperatingSystem.IsWindows()) {
+                var enumeration = new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint };
+                foreach (string file in Directory.EnumerateFiles(Path, "*", enumeration)) {
+                    FileAttributes attributes = File.GetAttributes(file);
+                    if ((attributes & FileAttributes.ReadOnly) != 0) { File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly); }
+                }
+            }
+            Directory.Delete(Path, recursive: true);
         }
     }
 }
