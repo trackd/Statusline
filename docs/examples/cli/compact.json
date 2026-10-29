@@ -1,0 +1,11 @@
+{
+  "Left": ["Directory", "Git", "Duration"],
+  "Style": "Rounded",
+  "IconSet": "NerdFont",
+  "DirectoryStyle": "Leaf",
+  "Padding": " ",
+  "Symbol": " › ",
+  "StartColor": "#3b4252",
+  "EndColor": "#5e81ac",
+  "ShellIntegration": "Auto"
+}

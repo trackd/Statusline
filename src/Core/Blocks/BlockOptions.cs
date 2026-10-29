@@ -73,4 +73,5 @@ public enum StatusLineBlockKind {
     NestedPrompt,
     Runspaces,
     HistoryId,
+    Shell,
 }

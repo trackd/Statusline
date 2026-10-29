@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Release module and CLI together, or attach CLI assets to the existing module release
+        type: choice
+        options: [module-and-cli, cli-only]
+        default: module-and-cli
 
 permissions:
   contents: read
@@ -27,13 +33,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select next minor version
+      - name: Select release version
         id: version
+        env:
+          RELEASE_MODE: ${{ inputs.mode }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $manifest = Import-PowerShellDataFile ./module/StatusLine.psd1
           $moduleName = [IO.Path]::GetFileNameWithoutExtension($manifest.RootModule)
           $baseVersion = [version]$manifest.ModuleVersion
+          if ($env:RELEASE_MODE -eq 'cli-only') {
+              gh release view "v$baseVersion" --repo $env:GITHUB_REPOSITORY
+              if ($LASTEXITCODE) { throw 'CLI-only mode requires an existing release matching the manifest version.' }
+              "version=$baseVersion" >> $env:GITHUB_OUTPUT
+              Write-Host "Attach CLI to existing release v$baseVersion"
+              exit 0
+          }
           $serviceIndex = Invoke-RestMethod https://pwsh.gallery/index.json
           $packageBase = $serviceIndex.resources |
               Where-Object { $_.'@type' -eq 'PackageBaseAddress/3.0.0' } |
@@ -59,13 +75,23 @@ jobs:
 
   validate:
     name: Validate release
+    if: inputs.mode != 'cli-only'
     needs: prepare
     uses: ./.github/workflows/validate.yml
     with:
       version: ${{ needs.prepare.outputs.version }}
 
+  native:
+    name: Build CLI for existing release
+    if: inputs.mode == 'cli-only'
+    needs: prepare
+    uses: ./.github/workflows/native.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+
   publish:
-    name: Publish module
+    name: Publish module and release assets
+    if: inputs.mode != 'cli-only'
     needs: [prepare, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -76,8 +102,8 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: statusline-module
-          path: artifacts
+          pattern: statusline-*
+          path: artifacts/release
 
       - name: Prepare release
         id: package
@@ -94,7 +120,8 @@ jobs:
           $manifest = Import-PowerShellDataFile ./module/StatusLine.psd1
           $moduleName = [IO.Path]::GetFileNameWithoutExtension($manifest.RootModule)
           $tag = "v$env:MODULE_VERSION"
-          $package = Get-Item -LiteralPath "./artifacts/$moduleName.$env:MODULE_VERSION.nupkg" -ErrorAction Stop
+          $assets = @(& ./.github/Get-ReleaseAssets.ps1 -Version $env:MODULE_VERSION -Path ./artifacts/release)
+          $package = $assets | Where-Object Name -CEQ "$moduleName.$env:MODULE_VERSION.nupkg"
           $tags = gh api "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/$tag" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Could not check existing release tags.' }
           if ($tags.ref -contains "refs/tags/$tag") { throw "Tag $tag already exists." }
@@ -127,7 +154,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.package.outputs.tag }}
           RELEASE_COMMIT: ${{ steps.package.outputs.commit }}
+          MODULE_VERSION: ${{ needs.prepare.outputs.version }}
           PACKAGE_PATH: ${{ steps.package.outputs.path }}
         run: |
-          gh release create $env:RELEASE_TAG --target $env:RELEASE_COMMIT --generate-notes $env:PACKAGE_PATH
+          $assets = @(& ./.github/Get-ReleaseAssets.ps1 -Version $env:MODULE_VERSION -Path ./artifacts/release)
+          gh release create $env:RELEASE_TAG --target $env:RELEASE_COMMIT --generate-notes @($assets.FullName)
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release creation failed. The package was already published to PSGallery; use the retained package to finish the release.' }
+
+  attach:
+    name: Attach CLI to existing release
+    if: inputs.mode == 'cli-only'
+    needs: [prepare, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: statusline-*
+          path: artifacts/release
+      - name: Attach versioned native archives and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODULE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v$env:MODULE_VERSION"
+          $assets = @(& ./.github/Get-ReleaseAssets.ps1 -Version $env:MODULE_VERSION -Path ./artifacts/release -NativeOnly)
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw 'The target release does not exist.' }
+          if (@($assets | Where-Object { $_.Name -cin $release.assets.name }).Count) {
+              throw 'The release already has matching CLI assets; no files were uploaded.'
+          }
+          gh release upload $tag --repo $env:GITHUB_REPOSITORY @($assets.FullName)
+          if ($LASTEXITCODE) { throw 'Could not attach native release assets. Existing assets are not overwritten.' }

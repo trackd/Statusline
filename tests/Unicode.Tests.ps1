@@ -11,7 +11,7 @@ BeforeAll {
             'Rendering/Unicode/Unicode.Generated.cs'
         )
         foreach ($name in $sourcePaths) {
-            $part = [IO.File]::ReadAllText("$PSScriptRoot/../src/$name")
+            $part = [IO.File]::ReadAllText("$PSScriptRoot/../src/Core/$name")
             $probeSource += $part.Replace('namespace StatusLine;', 'namespace UnicodeUnderTest {') + "`n}`n"
         }
         $probeSource += [IO.File]::ReadAllText("$PSScriptRoot/UnicodeProbe.cs")

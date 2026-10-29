@@ -30,11 +30,7 @@
   <!-- Compile the portable implementation into this executable. The module still
        compiles these files itself: no shared runtime assembly is introduced. -->
   <ItemGroup>
-    <Compile Remove="tests/**/*.cs" />
-    <Compile Include="../src/**/*.cs" Exclude="../src/bin/**;../src/obj/**" />
-    <!-- PowerShell adapters and orchestration stay in the module. New portable
-         providers and rendering files are included automatically. -->
-    <Compile Remove="../src/Commands/**;../src/PowerShell/**" />
+    <Compile Include="../Core/**/*.cs" Exclude="../Core/**/bin/**;../Core/**/obj/**" />
     <PackageReference Include="System.CommandLine" Version="3.0.0-rc.3.26522.148" />
     <EmbeddedResource Include="Shells/*" LogicalName="StatusLine.Shells.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Completions/*" LogicalName="StatusLine.Completions.%(Filename)%(Extension)" />

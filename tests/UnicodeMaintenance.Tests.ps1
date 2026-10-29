@@ -9,7 +9,7 @@ Describe 'Offline width-table maintenance' -Tag 'Maintenance' {
         @('3002..3003 ; W', '3000..3001 ; F', '0041 ; Na') |
             Set-Content -LiteralPath (Join-Path $inputDirectory 'EastAsianWidth.txt')
         '1F9E0 ; Emoji_Presentation' | Set-Content -LiteralPath (Join-Path $inputDirectory 'emoji-data.txt')
-        $production = Join-Path $PSScriptRoot '../src/Rendering/Unicode/CellWidthData.cs'
+        $production = Join-Path $PSScriptRoot '../src/Core/Rendering/Unicode/CellWidthData.cs'
         $before = (Get-FileHash -LiteralPath $production).Hash
         & "$PSScriptRoot/../tools/Update-CellWidthData.ps1" -InputDirectory $inputDirectory -OutputPath $candidate
         $text = Get-Content -LiteralPath $candidate -Raw

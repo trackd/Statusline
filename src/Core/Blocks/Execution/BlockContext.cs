@@ -6,6 +6,7 @@ internal sealed partial record BlockContext {
     public StatusLineState State { get; init; } = new();
 
     public string? PowerShellVersion { get; init; }
+    public string? ShellIdentity { get; init; }
 
     public IconSet IconSet { get; init; } = IconSet.NerdFont;
 

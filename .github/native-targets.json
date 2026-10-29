@@ -1,0 +1,7 @@
+{
+  "include": [
+    { "os": "ubuntu-24.04", "rid": "linux-x64", "packages": ["tar.gz", "deb", "rpm"] },
+    { "os": "windows-latest", "rid": "win-x64", "packages": ["zip"] },
+    { "os": "macos-latest", "rid": "osx-arm64", "packages": ["tar.gz"] }
+  ]
+}

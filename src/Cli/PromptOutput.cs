@@ -24,6 +24,7 @@ internal static class PromptOutput {
                 LastDuration = durationMilliseconds is { } milliseconds ? TimeSpan.FromMilliseconds(milliseconds) : null,
             },
             IconSet = options.IconSet,
+            ShellIdentity = Environment.GetEnvironmentVariable("STATUSLINE_SHELL"),
             BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,
             SlowProviderWait = wait ? TimeSpan.FromMilliseconds(options.BlockTimeoutMilliseconds) : TimeSpan.Zero,
             WeatherLocation = options.WeatherLocation,
@@ -57,11 +58,8 @@ internal static class PromptOutput {
 
         void Append(IEnumerable<string> names, StatusLineAlignment alignment) {
             foreach (string name in names) {
-                StatusLineBlockKind? kind = Kind(name);
-                string? error = null;
-                BlockContent? content = kind is { } builtIn
-                    ? BuiltInRefresh.Evaluate(BlockCatalog.Get(builtIn), context, out error)
-                    : ShellContent(options.IconSet);
+                StatusLineBlockKind kind = Kind(name);
+                BlockContent? content = BuiltInRefresh.Evaluate(BlockCatalog.Get(kind), context, out string? error);
                 if (error is not null && wait) { Console.Error.WriteLine($"statusline: {name}: {error}"); }
                 if (content is { } value) {
                     var block = new StatusLineBlock(value.Text, value.Accent, Color.Empty, alignment,
@@ -92,16 +90,7 @@ internal static class PromptOutput {
         BlockGradient.Validate(start, end);
     }
 
-    private static BlockContent? ShellContent(IconSet icons) {
-        string? identity = Environment.GetEnvironmentVariable("STATUSLINE_SHELL");
-        if (string.IsNullOrWhiteSpace(identity)) { return null; }
-        string text = TerminalText.Sanitize(identity, keepStyles: false);
-        string icon = icons switch { IconSet.NerdFont => "\uF489", IconSet.Unicode => "❯", _ => "SH" };
-        return (icon, text, StatusLineAlignment.Left, ConsoleColor.DarkCyan);
-    }
-
-    private static StatusLineBlockKind? Kind(string name) {
-        if (name.Equals("Shell", StringComparison.OrdinalIgnoreCase)) { return null; }
+    private static StatusLineBlockKind Kind(string name) {
         if (!Enum.TryParse(name, ignoreCase: true, out StatusLineBlockKind kind) || !Enum.IsDefined(kind) || PowerShellOnly.Contains(kind)) {
             throw new ArgumentException($"Unsupported shell block: {name}.");
         }

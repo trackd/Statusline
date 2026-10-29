@@ -22,7 +22,7 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$UnicodeVersion = '17.0.0',
     [string]$InputDirectory,
-    [string]$OutputPath = (Join-Path $PSScriptRoot '../src/Rendering/Unicode/CellWidthData.cs')
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../src/Core/Rendering/Unicode/CellWidthData.cs')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,7 +70,7 @@ else {
     $wideText = (Invoke-WebRequest -Uri ($sourceRoot + 'EastAsianWidth.txt')).Content
     $emojiText = (Invoke-WebRequest -Uri ($sourceRoot + 'emoji/emoji-data.txt')).Content
 }
-$sourcePath = Join-Path $PSScriptRoot '../src/Rendering/Unicode/CellWidthData.cs'
+$sourcePath = Join-Path $PSScriptRoot '../src/Core/Rendering/Unicode/CellWidthData.cs'
 $source = Get-Content -LiteralPath $sourcePath -Raw
 # Keep the checked-in line endings so regeneration only changes table values.
 $newLine = if ($source.Contains("`r`n")) { "`r`n" } else { "`n" }

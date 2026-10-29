@@ -44,6 +44,7 @@ internal static class BlockCatalog {
         new RubyBlock(),
         new RunspacesBlock(),
         new RustBlock(),
+        new ShellBlock(),
         new StackCountBlock(),
         new StatusBlock(),
         new SystemMemoryBlock(),

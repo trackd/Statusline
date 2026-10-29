@@ -21,20 +21,28 @@ env:
   DOTNET_NOLOGO: '1'
 
 jobs:
+  targets:
+    name: Select native targets
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: targets
+        run: |
+          $matrix = Get-Content ./.github/native-targets.json -Raw | ConvertFrom-Json | ConvertTo-Json -Depth 4 -Compress
+          "matrix=$matrix" >> $env:GITHUB_OUTPUT
+
   native:
     name: Native AOT (${{ matrix.rid }})
+    needs: targets
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            rid: linux-x64
-          - os: windows-latest
-            rid: win-x64
-          - os: macos-latest
-            rid: osx-arm64
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,10 +61,15 @@ jobs:
         run: |
           sudo apt-get update
           if ($LASTEXITCODE) { throw 'apt-get update failed.' }
-          sudo apt-get install -y clang zlib1g-dev zsh fish
+          sudo apt-get install -y clang binutils zlib1g-dev zsh fish
           if ($LASTEXITCODE) { throw 'Native tool installation failed.' }
       - name: Publish and validate native executable
-        run: ./cli/Publish-Native.ps1 -RuntimeIdentifier '${{ matrix.rid }}' -VerifyTerminalIntegration:$IsLinux
+        run: ./build.ps1 -Task Native -RuntimeIdentifier '${{ matrix.rid }}' -VerifyTerminalIntegration:$IsLinux
+      - name: Test Linux package installation
+        if: matrix.rid == 'linux-x64'
+        run: |
+          $version = (Import-PowerShellDataFile ./module/StatusLine.psd1).ModuleVersion
+          ./tests/Cli/Test-Packages.ps1 -Path ./artifacts/native/linux-x64 -Version $version
       - name: Retain executable
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -64,6 +77,8 @@ jobs:
           path: |
             artifacts/native/${{ matrix.rid }}/*.tar.gz
             artifacts/native/${{ matrix.rid }}/*.zip
+            artifacts/native/${{ matrix.rid }}/*.deb
+            artifacts/native/${{ matrix.rid }}/*.rpm
             artifacts/native/${{ matrix.rid }}/*.sha256
           if-no-files-found: error
       - name: Retain failed build diagnostics
@@ -74,5 +89,6 @@ jobs:
           path: |
             artifacts/native/${{ matrix.rid }}/*.binlog
             artifacts/native/${{ matrix.rid }}/test-results.json
+            artifacts/native/${{ matrix.rid }}/package-test-results.json
           if-no-files-found: ignore
           retention-days: 7

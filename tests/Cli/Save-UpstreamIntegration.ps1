@@ -7,9 +7,9 @@ are executed only in Linux test PTYs and are not included in the native package.
 .PARAMETER OutputPath
 Directory in which to save Contour and Ghostty fixtures.
 .EXAMPLE
-./cli/tests/Save-UpstreamIntegration.ps1
+./tests/Cli/Save-UpstreamIntegration.ps1
 .EXAMPLE
-./cli/tests/Save-UpstreamIntegration.ps1 -OutputPath ./artifacts/terminal-fixtures
+./tests/Cli/Save-UpstreamIntegration.ps1 -OutputPath ./artifacts/terminal-fixtures
 .OUTPUTS
 System.String. The absolute fixture directory.
 .NOTES

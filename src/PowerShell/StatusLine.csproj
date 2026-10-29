@@ -16,6 +16,8 @@
         <AnalysisLevel>latest-Recommended</AnalysisLevel>
     </PropertyGroup>
     <ItemGroup>
+        <!-- Shared sources are compiled into the module; no extra runtime DLL. -->
+        <Compile Include="../Core/**/*.cs" Exclude="../Core/**/bin/**;../Core/**/obj/**" />
         <InternalsVisibleTo Include="StatusLine.Tests" />
         <!-- Provided by the PowerShell host at runtime; compile-time reference only. -->
         <PackageReference Include="System.Management.Automation" Version="7.6.9" PrivateAssets="all"
