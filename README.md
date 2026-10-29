@@ -167,7 +167,7 @@ script output between the prompt and statusline. No registration or unregister s
 
 ## Learn more
 
-- [Experimental native CLI](cli/README.md) — shared-source Native AOT build and Bash, Zsh, Fish prompt setup.
+- [Experimental native CLI](cli/README.md) — Bash, Zsh, Fish prompt setup and [supported blocks](cli/README.md#supported-blocks), including shell name and version.
 - [Configuration guide](docs/Configuration.md) — layouts, colors, directory display, idle behavior,
   terminal compatibility, and troubleshooting.
 - [File output for Contour](docs/Configuration.md#file-output-and-contour-program) — an alternative

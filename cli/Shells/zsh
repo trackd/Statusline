@@ -3,6 +3,7 @@ typeset -g _statusline_executable=__STATUSLINE_EXECUTABLE__
 typeset -g _statusline_config=__STATUSLINE_CONFIG__
 typeset -g _statusline_status_file=__STATUSLINE_STATUS_FILE__
 if [[ -z ${_statusline_loaded-} ]]; then
+    export STATUSLINE_SHELL="zsh ${ZSH_VERSION}"
     typeset -g _statusline_status=0
     typeset -g _statusline_duration=''
     typeset -gF _statusline_started=0

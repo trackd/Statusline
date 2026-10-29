@@ -1,4 +1,5 @@
 # Evaluate with: statusline init fish | source
+set -gx STATUSLINE_SHELL "fish $version"
 set -g _statusline_executable __STATUSLINE_EXECUTABLE__
 set -g _statusline_config __STATUSLINE_CONFIG__
 set -g _statusline_status_file __STATUSLINE_STATUS_FILE__

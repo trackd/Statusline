@@ -13,6 +13,7 @@ internal static partial class Program {
     private sealed record TestResult(string Name, bool Passed, string? Error);
 
     public static int Main(string[] args) {
+        if (args is ["--shell-block", string shellBinary]) { binary = Path.GetFullPath(shellBinary); Case("ShellBlockShowsAdapterIdentityAndOmitsUnavailableData", ShellBlock); return failed == 0 ? 0 : 1; }
         if (args is ["--fixture-cleanup"]) { Case("FixtureCleanupRemovesReadOnlyGitObjects", ReadOnlyGitCleanup); return failed == 0 ? 0 : 1; }
         if (args is ["--worker-start", string workerBinary]) { binary = Path.GetFullPath(workerBinary); Case("WorkerStartupClosesLauncherStreams", WorkerStartupStreams); return failed == 0 ? 0 : 1; }
         if (args is ["--shell-test", string path, string shell]) { binary = Path.GetFullPath(path); Case(shell + "Pty", () => Shell(shell)); return failed == 0 ? 0 : 1; }
@@ -28,6 +29,7 @@ internal static partial class Program {
         }
         binary = Path.GetFullPath(args[0]);
         Case("StandaloneNativeExecutable", Standalone);
+        Case("ShellBlockShowsAdapterIdentityAndOmitsUnavailableData", ShellBlock);
         Case("ArgumentAndConfigurationErrors", InvalidInput);
         Case("SharedGitStatusAndDuration", GitData);
         Case("FixtureCleanupRemovesReadOnlyGitObjects", ReadOnlyGitCleanup);
@@ -114,6 +116,25 @@ internal static partial class Program {
     private static partial Regex VtPattern();
     [GeneratedRegex("0\\.[2-9]s", RegexOptions.CultureInvariant)]
     private static partial Regex DurationPattern();
+
+    private static void ShellBlock() {
+        using var fixture = new Fixture();
+        fixture.Configure(new { Left = new[] { "Shell" }, IconSet = "None", ShellIntegration = "None" });
+        string? original = Environment.GetEnvironmentVariable("STATUSLINE_SHELL");
+        try {
+            foreach (string identity in new[] { "bash 5.2.21(1)-release", "zsh 5.9", "fish 4.2.0" }) {
+                Environment.SetEnvironmentVariable("STATUSLINE_SHELL", identity);
+                var result = Cli("prompt", "--config", fixture.Config);
+                Check(result.Code == 0 && result.Out.Contains(identity, StringComparison.Ordinal), "Shell identity missing: " + result.Error);
+                result = Cli("statusline", "--config", fixture.Config);
+                Check(result.Code == 0 && result.Out.Contains(identity, StringComparison.Ordinal), "Status bar shell identity missing: " + result.Error);
+            }
+            Environment.SetEnvironmentVariable("STATUSLINE_SHELL", null);
+            var missing = Cli("prompt", "--config", fixture.Config);
+            Check(missing.Code == 0 && !missing.Out.Contains("SH", StringComparison.Ordinal), "Unavailable shell must be omitted.");
+        }
+        finally { Environment.SetEnvironmentVariable("STATUSLINE_SHELL", original); }
+    }
 
     private static void Standalone() {
         using var fixture = new Fixture();
@@ -466,7 +487,7 @@ internal static partial class Program {
         using var fixture = new Fixture();
         string shellVersion = shell == "fish" ? Run("fish", null, "--version").Out : "";
         bool transient = shell == "zsh" || (shell == "fish" && Version.TryParse(shellVersion.Trim().Split(' ')[^1], out Version? fishVersion) && fishVersion >= new Version(4, 1));
-        fixture.Configure(new { Left = new[] { "Directory", "Status", "Duration" }, Style = "Plain", IconSet = "None", DirectoryStyle = "Leaf",
+        fixture.Configure(new { Left = new[] { "Directory", "Status", "Duration", "Shell" }, Style = "Plain", IconSet = "None", DirectoryStyle = "Leaf",
             Symbol = " __STATUSLINE_READY__ ", Transient = transient, TransientSymbol = " SHORT_PROMPT " });
         string directory = Path.Combine(fixture.Path, "literal_%F{red}_$(touch injected)");
         Directory.CreateDirectory(directory);
@@ -477,6 +498,9 @@ internal static partial class Program {
         string initialize = shell == "fish" ? invocation + " | source" : "eval \"$(" + invocation + ")\"";
         _ = terminal.Command(initialize);
         string failure = Plain(terminal.Command("false"));
+        string versionVariable = shell switch { "bash" => "BASH_VERSION", "zsh" => "ZSH_VERSION", _ => "version" };
+        string expectedVersion = Run(shell, null, "-c", "printf '%s' \"$" + versionVariable + "\"").Out.Trim();
+        Check(expectedVersion.Length > 0 && failure.Contains(shell + " " + expectedVersion, StringComparison.Ordinal), "Running shell version missing: " + failure);
         Check(failure.Contains("ERR 1", StringComparison.Ordinal), failure);
         if (shell != "fish") { Check(failure.Contains("EXISTING_HOOK", StringComparison.Ordinal), failure); }
         Check(Plain(terminal.Command("true")).Contains("OK", StringComparison.Ordinal), "Successful command status lost.");

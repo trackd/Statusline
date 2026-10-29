@@ -9,7 +9,7 @@
   "DirectoryStyle": "Home",
   "IconSet": "NerdFont",
   "StatusLine": {
-    "Left": ["Git"],
+    "Left": ["Os", "Shell", "Git"],
     "Center": ["Uptime"],
     "Right": ["Cpu", "SystemMemory", "Clock"],
     "StartColor": "#0400fdff",

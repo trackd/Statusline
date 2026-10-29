@@ -50,6 +50,33 @@ Existing profile content, encoding, newlines and symlinks are preserved. The fir
 existing profile receives a `.statusline.bak` backup. Quoted `~/...` paths are
 expanded by the CLI. On Linux, omitting the shell name lets `init` infer the calling shell.
 
+## Supported blocks
+
+Use these names in `Left`, `Center`, or `Right`, either at the top level for the
+prompt or inside `StatusLine` for the bar. Names are case-insensitive.
+
+| Category | Blocks |
+| --- | --- |
+| Command and location | `Directory`, `Git`, `Status`, `Duration`, `Elevation` |
+| Shell and machine | `Shell`, `Os`, `User`, `Host` |
+| Live metrics | `Cpu`, `Gpu`, `SystemMemory`, `Network`, `Battery` |
+| Time and weather | `Clock`, `Date`, `Uptime`, `Weather` |
+| Project and runtimes | `Package`, `VirtualEnv`, `Node`, `Python`, `Dotnet`, `Go`, `Rust`, `Java`, `Ruby` |
+| Cloud and containers | `Aws`, `Azure`, `Kubernetes`, `Docker` |
+
+`Shell` shows the running shell and its version, supplied by the Bash, Zsh, or
+Fish adapter at initialization. For example, `"Left": ["Os", "Shell", "Host"]`
+works well in `StatusLine`. Standalone renders outside an initialized session
+omit this block when shell information is unavailable.
+
+Blocks appear when their data is available; runtime, project, cloud, battery,
+and GPU blocks depend on the current directory, environment, tools, or hardware.
+Set `WeatherLocation` to select the weather location. Slow providers refresh
+asynchronously in an initialized session.
+
+The PowerShell-only blocks `PowerShell`, `ProcessMemory`, `Errors`, `StackCount`,
+`NestedPrompt`, `Runspaces`, and `HistoryId` are unavailable in the CLI.
+
 ## Live status bar
 
 Contour supports a host-writable status display that updates independently of the
