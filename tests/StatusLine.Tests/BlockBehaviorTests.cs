@@ -6,6 +6,20 @@ namespace StatusLine.Tests;
 
 public sealed class BlockBehaviorTests {
     [Theory]
+    [InlineData("bash 5.2", null, "bash 5.2")]
+    [InlineData("fish 4.2", "7.6.0", "fish 4.2")]
+    [InlineData(null, "7.6.0", "pwsh 7.6.0")]
+    [InlineData(" ", "7.6.0", "pwsh 7.6.0")]
+    [InlineData(null, null, null)]
+    public void ShellUsesHostIdentityOrPowerShellVersion(string? identity, string? powerShellVersion, string? expected) {
+        var block = (IImmediateBlock)BlockCatalog.Get(StatusLineBlockKind.Shell);
+        var context = new BlockContext { ShellIdentity = identity, PowerShellVersion = powerShellVersion, IconSet = IconSet.None };
+        BlockContent? content = block.Evaluate(context);
+        Assert.Equal(expected, content?.Text);
+        if (expected is not null) { Assert.Equal("SH", content!.Value.Icon); }
+    }
+
+    [Theory]
     [InlineData("# branch.head main\n# branch.ab +0 -0", 0, 0, 0, 0, 0, 0)]
     [InlineData("# branch.ab +12 -3", 12, 3, 0, 0, 0, 0)]
     [InlineData("1 M. tracked", 0, 0, 1, 0, 0, 0)]

@@ -1,0 +1,4 @@
+function _statusline_complete
+    __STATUSLINE_EXECUTABLE__ complete --line (commandline -cp)
+end
+complete -c statusline -f -a '(_statusline_complete)'

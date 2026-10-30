@@ -54,6 +54,12 @@ dotnet_sort_system_directives_first = true
 # Default analyzer severity for most rules: suggestion (non-breaking for local dev)
 dotnet_analyzer_diagnostic.severity = suggestion
 
+# Compatibility diagnostics must remain visible despite the advisory default.
+# The CLI enables these analyzers during ordinary managed builds.
+dotnet_analyzer_diagnostic.category-Trimming.severity = error
+dotnet_analyzer_diagnostic.category-AOT.severity = error
+dotnet_analyzer_diagnostic.category-SingleFile.severity = error
+
 # categories: sensible defaults for repository quality
 # Style: formatting and stylistic suggestions
 dotnet_analyzer_diagnostic.category-Style.severity = warning

@@ -1,0 +1,8 @@
+_statusline_complete() {
+    local -a candidates
+    candidates=("${(@f)$(__STATUSLINE_EXECUTABLE__ complete --line "$LBUFFER")}")
+    compadd -a candidates
+}
+if (( $+functions[compdef] )); then
+    compdef _statusline_complete statusline
+fi

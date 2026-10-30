@@ -2,6 +2,8 @@
 
 PowerShell prompts and a live terminal status line built from the same reusable blocks.
 Display project context, command results, and system activity in either surface.
+An experimental native CLI brings the same renderer and built-in blocks to Bash,
+Zsh, and Fish, without requiring PowerShell or a .NET runtime.
 
 ## Features
 
@@ -35,6 +37,38 @@ Rows labelled "sample" use fixed session counts, weather, uptime, CPU, and RAM v
 Install-Module Statusline
 ```
 
+### Bash, Zsh, and Fish
+
+The CLI is a single `statusline` executable. Download a matching native package
+from [GitHub Releases](https://github.com/trackd/Statusline/releases) when available,
+or use a build artifact from [Native executable](https://github.com/trackd/Statusline/actions/workflows/native.yml).
+Extract it and put `statusline` on your `PATH`, then initialize your shell:
+
+```bash
+# Bash
+eval "$(statusline init bash)"
+```
+
+```zsh
+# Zsh
+eval "$(statusline init zsh)"
+```
+
+```fish
+# Fish
+statusline init fish | source
+```
+
+These enable the default prompt for the current session. Add `--config` for JSON
+configuration or `--install` to opt into profile setup. The live status bar is
+enabled separately and currently needs a supported Unix terminal such as Contour;
+the prompt works independently of status-bar support.
+
+See the [CLI guide](docs/Cli.md) for installation, persistent setup,
+[supported blocks](docs/Cli.md#supported-blocks), and
+[configuration examples](docs/Cli.md#configuration-examples), including a gradient
+status bar with OS and shell version.
+
 ## Commands
 
 | Command | Purpose |
@@ -55,7 +89,7 @@ Install-Module Statusline
 | Project context | Directory, Git, Package, VirtualEnv |
 | Command and session information | Status, Duration, HistoryId, Errors, StackCount, NestedPrompt, Runspaces |
 | System activity | Cpu, Gpu, Network, SystemMemory, ProcessMemory, Battery |
-| Runtime versions | PowerShell, Node, Python, Dotnet, Go, Rust, Java, Ruby |
+| Runtime versions | Shell, PowerShell, Node, Python, Dotnet, Go, Rust, Java, Ruby |
 | Environment and services | User, Host, Os, Elevation, Aws, Azure, Kubernetes, Docker |
 | Time and weather | Clock, Date, Uptime, Weather |
 
@@ -72,6 +106,16 @@ Build from the repository root, then import the module:
 Import-Module ./output/StatusLine.psd1
 Enable-Prompt
 ```
+
+`./build.ps1` and `StatusLine.slnx` build and test the PowerShell module only.
+The module ships one `StatusLine.dll`; native CLI publishing is a separate,
+explicit operation.
+
+Source lives under `src/Core` (shared blocks and rendering), `src/PowerShell`
+(module commands and host integration), and `src/Cli` (native executable and
+shell adapters). Both host projects compile Core directly, without a separate
+Core assembly. New files in each source folder are included automatically.
+Module tests remain under `tests`; CLI tests live under `tests/Cli`.
 
 For Nerd Font icons and segment separators, use a patched font such as Cascadia Mono NF.
 Prefer a plain look? Try `Enable-Prompt -IconSet None -Style Plain`.
@@ -167,6 +211,8 @@ script output between the prompt and statusline. No registration or unregister s
 
 ## Learn more
 
+- [Native CLI guide](docs/Cli.md) — Bash, Zsh, and Fish setup, configuration examples,
+  supported blocks, and native build and release tasks.
 - [Configuration guide](docs/Configuration.md) — layouts, colors, directory display, idle behavior,
   terminal compatibility, and troubleshooting.
 - [File output for Contour](docs/Configuration.md#file-output-and-contour-program) — an alternative

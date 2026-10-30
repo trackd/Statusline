@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>statusline</AssemblyName>
+    <RootNamespace>StatusLine.Cli</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <StripSymbols>true</StripSymbols>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OptimizationPreference Condition="'$(OptimizationPreference)' == ''">Speed</OptimizationPreference>
+    <DebuggerSupport>false</DebuggerSupport>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetricsSupport>false</MetricsSupport>
+    <HttpActivityPropagationSupport>false</HttpActivityPropagationSupport>
+    <Http3Support>false</Http3Support>
+  </PropertyGroup>
+  <!-- Compile the portable implementation into this executable. The module still
+       compiles these files itself: no shared runtime assembly is introduced. -->
+  <ItemGroup>
+    <Compile Include="../Core/**/*.cs" Exclude="../Core/**/bin/**;../Core/**/obj/**" />
+    <PackageReference Include="System.CommandLine" Version="3.0.0-rc.3.26522.148" />
+    <EmbeddedResource Include="Shells/*" LogicalName="StatusLine.Shells.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Completions/*" LogicalName="StatusLine.Completions.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

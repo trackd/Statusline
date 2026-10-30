@@ -1,0 +1,13 @@
+{
+  "Left": ["Directory", "Git", "Status", "Duration"],
+  "Right": ["Node", "Python", "Dotnet", "Package"],
+  "Rows": 2,
+  "Style": "Powerline",
+  "BlockSeparator": true,
+  "Transient": true,
+  "ShellIntegration": "Auto",
+  "StartColor": "#7957d5",
+  "EndColor": "#36c5b7",
+  "DirectoryStyle": "Home",
+  "IconSet": "NerdFont"
+}

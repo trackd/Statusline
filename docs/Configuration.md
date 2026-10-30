@@ -327,6 +327,7 @@ changes the working directory reported to the terminal.
 | Gpu | GPU usage; per-adapter labels when several adapters report |
 | Battery, Weather | Charge and charging state; weather from wttr.in |
 | Errors, StackCount, NestedPrompt, Runspaces | Retained `$Error` records, location stack depth, nested prompt depth, process runspaces |
+| Shell | Shell name and version; `pwsh` in the module, or Bash/Zsh/Fish in the CLI |
 | PowerShell, User, Host, Os, Elevation | Session, platform and privilege information |
 | Clock, Date, Uptime | Local time, date and system uptime |
 | Node, Python, Dotnet, Go, Rust, Java, Ruby | Runtime versions for the current project |

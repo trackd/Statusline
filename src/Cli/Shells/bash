@@ -1,0 +1,132 @@
+# Bash 5+; evaluate with: eval "$(statusline init bash)"
+if (( BASH_VERSINFO[0] < 5 )); then
+    printf '%s\n' 'statusline requires Bash 5 or newer' >&2
+elif [[ -z ${_statusline_loaded-} ]]; then
+    export STATUSLINE_SHELL="bash ${BASH_VERSION}"
+    _statusline_executable=__STATUSLINE_EXECUTABLE__
+    _statusline_config=__STATUSLINE_CONFIG__
+    _statusline_status_file=__STATUSLINE_STATUS_FILE__
+    _statusline_environment=(__STATUSLINE_ENVIRONMENT__)
+    _statusline_started=0
+    _statusline_duration=''
+    _statusline_status=0
+
+    _statusline_ownership() {
+        _statusline_external=0
+        if { declare -F __ghostty_hook >/dev/null || declare -F __ghostty_precmd >/dev/null; } &&
+            [[ "${PROMPT_COMMAND[*]-} ${precmd_functions[*]-}" == *'__ghostty_'* ]]; then
+            _statusline_external=63
+            # An already loaded Ghostty may retain its old theme's saved PS1.
+            # Supply B until its wrapper is actually present around our prompt.
+            [[ ${PS1-} == *']133;B'* ]] || _statusline_external=61
+        elif declare -F __contour_precmd >/dev/null && [[ " ${precmd_functions[*]-} " == *' __contour_precmd '* ]]; then
+            _statusline_external=63
+        fi
+    }
+
+    _statusline_preserve_dispatcher() {
+        # bash-preexec must arm its DEBUG hook after every prompt callback.
+        # It may also rebuild PROMPT_COMMAND after we were installed.
+        if declare -F __bp_interactive_mode >/dev/null && [[ "${PROMPT_COMMAND[*]-}" == *'__bp_interactive_mode'* ]]; then
+            local hook callbacks=() arm=()
+            for hook in "${PROMPT_COMMAND[@]}"; do
+                if [[ $hook == __bp_interactive_mode ]]; then
+                    arm+=("$hook")
+                elif [[ $hook == *$'\n__bp_interactive_mode' ]]; then
+                    callbacks+=("${hook%$'\n__bp_interactive_mode'}")
+                    arm+=(__bp_interactive_mode)
+                elif [[ $hook != _statusline_refresh ]]; then
+                    callbacks+=("$hook")
+                fi
+            done
+            PROMPT_COMMAND=("${callbacks[@]}" _statusline_refresh "${arm[@]}")
+        fi
+    }
+
+    _statusline_connect() {
+        local options=(--parent-pid "$$")
+        [[ -z $_statusline_config ]] || options+=(--config "$_statusline_config")
+        [[ -z $_statusline_status_file ]] || options+=(--status-file "$_statusline_status_file")
+        if [[ -n ${_statusline_read-} ]]; then exec {_statusline_read}<&-; fi
+        if [[ -n ${_statusline_write-} ]]; then exec {_statusline_write}>&-; fi
+        coproc _statusline_channel { exec "$_statusline_executable" serve "${options[@]}"; }
+        _statusline_worker=$_statusline_channel_PID
+        # Duplicated descriptors remain usable inside PS0's command substitution.
+        exec {_statusline_read}<&"${_statusline_channel[0]}"
+        exec {_statusline_write}>&"${_statusline_channel[1]}"
+        local original_read=${_statusline_channel[0]} original_write=${_statusline_channel[1]}
+        exec {original_read}<&- {original_write}>&-
+        disown "$_statusline_worker" 2>/dev/null || :
+        IFS= read -r -d '' -t 5 -u "$_statusline_read" _statusline_session &&
+            [[ $_statusline_session =~ ^[0-9a-fA-F]{32}$ ]]
+    }
+
+    _statusline_call() {
+        local command=$1 name result
+        _statusline_prefix=''
+        _statusline_ownership
+        # Builtin writes/reads reuse the worker; no per-prompt native client.
+        {
+            printf '%s\0' "$command" "$PWD" "${COLUMNS:-120}" "$_statusline_status" "$_statusline_duration" bash "${2-}" "$_statusline_external"
+            for name in "${_statusline_environment[@]}"; do
+                printf '%s\0' "${!name-}"
+            done
+        } >&"$_statusline_write" 2>/dev/null || return 1
+        IFS= read -r -d '' -t 3 -u "$_statusline_read" result &&
+            IFS= read -r -d '' -t 3 -u "$_statusline_read" _statusline_prefix &&
+            IFS= read -r -d '' -t 3 -u "$_statusline_read" _statusline_reply || return 1
+        [[ $result == ok ]]
+    }
+
+    _statusline_precmd() {
+        _statusline_status=$? _statusline_pipeline=("${PIPESTATUS[@]}")
+        local now=${EPOCHREALTIME//[!0-9]/}
+        _statusline_duration=''
+        if (( _statusline_started > 0 )); then
+            _statusline_duration=$(( (now - _statusline_started) / 1000 ))
+        fi
+        _statusline_started=0
+        _statusline_preserve_dispatcher
+        return "$_statusline_status"
+    }
+    _statusline_refresh() {
+        if ! _statusline_call prompt; then
+            # Reconnect in the parent shell so replacement descriptors survive.
+            _statusline_reply=' > '
+            if _statusline_connect; then _statusline_call prompt || :; fi
+        fi
+        printf '%s' "${_statusline_prefix-}"
+        _statusline_frame=$_statusline_reply
+        return "$_statusline_status"
+    }
+    _statusline_execute() {
+        if _statusline_call command-start; then printf '%s' "$_statusline_reply"; fi
+    }
+
+    if _statusline_connect; then
+        _statusline_loaded=1
+        _statusline_frame=' > '
+        if [[ __STATUSLINE_TRANSIENT__ == 1 ]]; then
+            printf '%s\n' 'statusline: transient redraw is supported in Zsh and Fish 4.1+, not Bash yet.' >&2
+        fi
+        PS0='${_statusline_started:0:$((_statusline_started=${EPOCHREALTIME//[!0-9]/},0))}$(_statusline_execute)'"${PS0-}"
+        PROMPT_COMMAND=(_statusline_precmd "${PROMPT_COMMAND[@]}" _statusline_refresh)
+        _statusline_preserve_dispatcher
+        # Parameter expansion does not evaluate the frame as shell source and
+        # avoids a command-substitution child just to print the cached prompt.
+        _statusline_primary_mark='\[\e]133;P;k=i\a\]'
+        _statusline_input_mark='\[\e]133;B\a\]'
+        if declare -F __ghostty_precmd >/dev/null && [[ ${PS1-} == "$_statusline_primary_mark"* && $PS1 == *"$_statusline_input_mark"* ]]; then
+            # Replace the old theme inside the existing terminal wrapper. Keep
+            # optional native cursor/helper suffixes and leave its state alone.
+            _statusline_prompt_suffix=${PS1##*"$_statusline_input_mark"}
+            PS1="$_statusline_primary_mark"'${_statusline_frame}'"$_statusline_input_mark$_statusline_prompt_suffix"
+        else
+            PS1='${_statusline_frame}'
+        fi
+        shopt -s promptvars
+    else
+        unset _statusline_session
+        printf '%s\n' 'statusline: worker initialization failed; existing prompt preserved.' >&2
+    fi
+fi

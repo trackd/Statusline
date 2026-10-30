@@ -1,0 +1,119 @@
+# Evaluate with: eval "$(statusline init zsh)"
+typeset -g _statusline_executable=__STATUSLINE_EXECUTABLE__
+typeset -g _statusline_config=__STATUSLINE_CONFIG__
+typeset -g _statusline_status_file=__STATUSLINE_STATUS_FILE__
+if [[ -z ${_statusline_loaded-} ]]; then
+    export STATUSLINE_SHELL="zsh ${ZSH_VERSION}"
+    typeset -g _statusline_status=0
+    typeset -g _statusline_duration=''
+    typeset -gF _statusline_started=0
+    zmodload zsh/datetime
+    autoload -Uz add-zsh-hook
+    typeset -ga _statusline_environment=(__STATUSLINE_ENVIRONMENT__)
+    typeset -g _statusline_input='' _statusline_output='' _statusline_reply='' _statusline_frame=' > '
+    _statusline_ownership() {
+        _statusline_external=0
+        if (( $+functions[precmd_hook_contour] )) && [[ " ${precmd_functions[*]-} " == *' precmd_hook_contour '* ]]; then
+            _statusline_external=63
+        elif (( $+parameters[_ghostty_state] )) && [[ "${precmd_functions[*]-}" == *'_ghostty_'* ]]; then
+            _statusline_external=63
+        fi
+    }
+    _statusline_connect() {
+        local -a options candidate
+        options=(--parent-pid "$$")
+        [[ -z $_statusline_config ]] || options+=(--config "$_statusline_config")
+        [[ -z $_statusline_status_file ]] || options+=(--status-file "$_statusline_status_file")
+        if [[ __STATUSLINE_CHANNEL__ == 1 ]]; then
+            candidate=("${(@f)$("$_statusline_executable" channel "${options[@]}")}")
+            [[ $? == 0 && ${#candidate} == 3 && ${candidate[1]} =~ ^[0-9a-fA-F]{32}$ ]] || return 1
+            _statusline_session=$candidate[1]
+            _statusline_input=$candidate[2]
+            _statusline_output=$candidate[3]
+        else
+            _statusline_session=$("$_statusline_executable" start "${options[@]}") &&
+                [[ $_statusline_session =~ ^[0-9a-fA-F]{32}$ ]] || return 1
+        fi
+    }
+    typeset -g _statusline_session
+    if _statusline_connect; then
+        typeset -g _statusline_loaded=1
+
+        _statusline_preexec() {
+            _statusline_started=$EPOCHREALTIME
+            if _statusline_call command-start --command "$1"; then printf '%s' "$_statusline_reply"; fi
+        }
+
+        _statusline_precmd() {
+            _statusline_status=$? _statusline_pipeline=("${pipestatus[@]}")
+            PROMPT='${_statusline_frame}'
+            _statusline_duration=''
+            if (( _statusline_started > 0 )); then
+                printf -v _statusline_duration '%.0f' "$(( (EPOCHREALTIME - _statusline_started) * 1000 ))"
+            fi
+            _statusline_started=0
+            return $_statusline_status
+        }
+
+        _statusline_call() {
+            local command=$1
+            _statusline_prefix=''
+            shift
+            _statusline_ownership
+            if [[ -n $_statusline_input ]]; then
+                local name result text=''
+                [[ $command == command-start && ${1-} == --command ]] && text=$2
+                {
+                    printf '%s\0' "$command" "$PWD" "${COLUMNS:-120}" "$_statusline_status" "$_statusline_duration" zsh "$text" "$_statusline_external"
+                    for name in "${_statusline_environment[@]}"; do printf '%s\0' "${(P)name}"; done
+                } 2>/dev/null >"$_statusline_input" || return 1
+                {
+                    IFS= read -r -d '' -t 3 result && IFS= read -r -d '' -t 3 _statusline_prefix && IFS= read -r -d '' -t 3 _statusline_reply
+                } 2>/dev/null <"$_statusline_output" || return 1
+                [[ $result == ok ]]
+                return $?
+            fi
+            local -a options
+            options=(--shell zsh --cwd "$PWD" --width "${COLUMNS:-120}" --status "$_statusline_status")
+            options+=(--session "$_statusline_session" --parent-pid "$$")
+            options+=(--integration-owner "$_statusline_external")
+            [[ -z $_statusline_config ]] || options+=(--config "$_statusline_config")
+            [[ -z $_statusline_status_file ]] || options+=(--status-file "$_statusline_status_file")
+            [[ -z $_statusline_duration ]] || options+=(--duration-ms "$_statusline_duration")
+            _statusline_prefix=''
+            _statusline_reply=$("$_statusline_executable" "$command" "${options[@]}" "$@")
+        }
+
+        _statusline_refresh() {
+            if ! _statusline_call prompt; then
+                _statusline_reply=' > '
+                if _statusline_connect; then _statusline_call prompt || :; fi
+            fi
+            printf '%s' "${_statusline_prefix-}"
+            _statusline_frame=$_statusline_reply
+            return $_statusline_status
+        }
+
+        if [[ __STATUSLINE_TRANSIENT__ == 1 ]]; then
+            autoload -Uz add-zle-hook-widget
+            _statusline_line_finish() {
+                if [[ -n $BUFFER ]]; then
+                    if _statusline_call transient; then
+                        PROMPT=$_statusline_reply
+                        zle .reset-prompt
+                    fi
+                fi
+            }
+            add-zle-hook-widget line-finish _statusline_line_finish
+        fi
+
+        # Prepend the status capture so earlier prompt hooks cannot overwrite it.
+        precmd_functions=(_statusline_precmd "${precmd_functions[@]}" _statusline_refresh)
+        add-zsh-hook preexec _statusline_preexec
+        setopt prompt_subst
+        PROMPT='${_statusline_frame}'
+    else
+        unset _statusline_session
+        printf '%s\n' 'statusline: worker initialization failed; existing prompt preserved.' >&2
+    fi
+fi

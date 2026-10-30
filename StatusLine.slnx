@@ -2,5 +2,5 @@
   <Folder Name="/tests/">
     <Project Path="tests/StatusLine.Tests/StatusLine.Tests.csproj" />
   </Folder>
-  <Project Path="src/StatusLine.csproj" />
+  <Project Path="src/PowerShell/StatusLine.csproj" />
 </Solution>

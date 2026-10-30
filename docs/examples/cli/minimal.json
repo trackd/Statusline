@@ -1,0 +1,7 @@
+{
+  "Left": ["Directory", "Git", "Status", "Duration"],
+  "Style": "Plain",
+  "IconSet": "None",
+  "DirectoryStyle": "Home",
+  "ShellIntegration": "Auto"
+}

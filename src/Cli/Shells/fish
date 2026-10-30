@@ -1,0 +1,146 @@
+# Evaluate with: statusline init fish | source
+set -gx STATUSLINE_SHELL "fish $version"
+set -g _statusline_executable __STATUSLINE_EXECUTABLE__
+set -g _statusline_config __STATUSLINE_CONFIG__
+set -g _statusline_status_file __STATUSLINE_STATUS_FILE__
+set -g _statusline_environment __STATUSLINE_ENVIRONMENT__
+function _statusline_native_ownership --argument-names native_version marker_status
+    set -g _statusline_external 0
+    set -l parts (string split . (string replace -r '[^0-9.].*$' '' -- $native_version)) 0 0
+    if test "$parts[1]" -ge 4
+        # Fish 4 reports cwd independently of its optional prompt markers.
+        set -g _statusline_external 16
+        if test "$marker_status" -ne 1
+            set -g _statusline_external 29
+            if test "$parts[1]" -gt 4; or test "$parts[2]" -ge 3
+                set -g _statusline_external 31
+            end
+        end
+    end
+end
+function _statusline_ownership
+    status test-feature mark-prompt 2>/dev/null
+    set -l marker_status $status
+    _statusline_native_ownership "$version" "$marker_status"
+    if functions -q precmd_hook_contour
+        set -g _statusline_external 63
+    else if functions -q __ghostty_setup; or functions -q __ghostty_mark_prompt_start
+        # Ghostty's Fish script supplies A/C/D/cwd, but no B of its own.
+        if test "$_statusline_external" -ne 31
+            set -g _statusline_external 29
+        end
+    end
+end
+function _statusline_connect
+    set -l options --parent-pid $fish_pid
+    test -z "$_statusline_config"; or set -a options --config "$_statusline_config"
+    test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+    set -l command start
+    set -l expected 1
+    if test __STATUSLINE_CHANNEL__ = 1
+        set command channel
+        set expected 3
+    end
+    set -l candidate ("$_statusline_executable" $command $options)
+    if test $status -eq 0; and test (count $candidate) -eq $expected; and string match -qr '^[0-9a-fA-F]{32}$' -- "$candidate[1]"
+        set -g _statusline_session $candidate[1]
+        set -g _statusline_input ''
+        if test $expected -eq 3
+            set -g _statusline_input $candidate[2]
+            set -g _statusline_output $candidate[3]
+        end
+    else
+        set -e _statusline_session
+        return 1
+    end
+end
+set -l _statusline_start_ok 1
+if not set -q _statusline_session[1]
+    if not _statusline_connect
+        set _statusline_start_ok 0
+        printf '%s\n' 'statusline: worker initialization failed; existing prompt preserved.' >&2
+    end
+end
+
+if test $_statusline_start_ok -eq 1
+    if test __STATUSLINE_TRANSIENT__ = 1
+        set -l parts (string split . $version)
+        if test $parts[1] -gt 4; or begin; test $parts[1] -eq 4; and test $parts[2] -ge 1; end
+            set -g fish_transient_prompt 1
+        else
+            printf '%s\n' 'statusline: transient prompts require Fish 4.1 or newer.' >&2
+        end
+    end
+
+    function _statusline_call --argument-names command last_status duration command_text
+        set -g _statusline_prefix ''
+        _statusline_ownership
+        begin
+            printf '%s\0' "$command" "$PWD" "$COLUMNS" "$last_status" "$duration" fish "$command_text" "$_statusline_external"
+            for name in $_statusline_environment
+                set -l value ''
+                if set -q $name
+                    if test "$name" = PATH
+                        set value (string join : -- $$name)
+                    else
+                        set value "$$name"
+                    end
+                end
+                printf '%s\0' "$value"
+            end
+        end 2>/dev/null >"$_statusline_input"; or return 1
+        set -l response
+        begin
+            read -z response; and read -z -g _statusline_prefix; and read -z -g _statusline_reply
+        end 2>/dev/null <"$_statusline_output"; or return 1
+        test "$response" = ok
+    end
+
+    function _statusline_execute --on-event fish_preexec
+        if test -n "$_statusline_input"
+            if _statusline_call command-start 0 '' "$argv[1]"
+            printf '%s%s' "$_statusline_prefix" "$_statusline_reply"
+            end
+            return
+        end
+        set -l options --session "$_statusline_session" --parent-pid $fish_pid --command "$argv[1]"
+        _statusline_ownership
+        set -a options --integration-owner "$_statusline_external"
+        test -z "$_statusline_config"; or set -a options --config "$_statusline_config"
+        test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+        "$_statusline_executable" command-start $options
+    end
+
+    function fish_prompt
+        set -l last_status $status
+        set -l command prompt
+        if contains -- --final-rendering $argv; and test __STATUSLINE_TRANSIENT__ = 1
+            set command transient
+        end
+        if test -n "$_statusline_input"
+            set -l duration ''
+            if set -q CMD_DURATION; and test "$CMD_DURATION" -ge 0
+                set duration "$CMD_DURATION"
+            end
+            if not _statusline_call $command $last_status "$duration" ''
+                set -g _statusline_reply ' > '
+                if _statusline_connect
+                    _statusline_call $command $last_status "$duration" ''; or true
+                end
+            end
+            printf '%s%s' "$_statusline_prefix" "$_statusline_reply"
+            return
+        end
+        set -l options --session "$_statusline_session" --parent-pid $fish_pid --shell fish --cwd "$PWD" --width $COLUMNS --status $last_status
+        _statusline_ownership
+        set -a options --integration-owner "$_statusline_external"
+        if test -n "$_statusline_config"
+            set -a options --config "$_statusline_config"
+        end
+        test -z "$_statusline_status_file"; or set -a options --status-file "$_statusline_status_file"
+        if set -q CMD_DURATION; and test "$CMD_DURATION" -ge 0
+            set -a options --duration-ms "$CMD_DURATION"
+        end
+        "$_statusline_executable" $command $options
+    end
+end

@@ -1,0 +1,12 @@
+{
+  "Left": ["Os", "Directory", "Git"],
+  "Right": ["Status", "Duration"],
+  "Rows": 2,
+  "Style": "Diamond",
+  "IconSet": "NerdFont",
+  "DirectoryStyle": "Home",
+  "Symbol": " ❯ ",
+  "StartColor": "#c678dd",
+  "EndColor": "#e5a55e",
+  "ShellIntegration": "Auto"
+}

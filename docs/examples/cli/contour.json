@@ -1,0 +1,28 @@
+{
+  "Target": "HostWritable",
+  "Left": ["Elevation", "Directory", "Git", "Status", "Duration"],
+  "Right": ["VirtualEnv", "Node", "Python", "Dotnet", "Package"],
+  "Rows": 2,
+  "Style": "Powerline",
+  "IconSet": "NerdFont",
+  "DirectoryStyle": "Home",
+  "BlockSeparator": true,
+  "Padding": " ",
+  "Symbol": " ❯ ",
+  "Transient": true,
+  "TransientSymbol": " ❯ ",
+  "ShellIntegration": "Auto",
+  "StartColor": "#0400fdff",
+  "EndColor": "#ff7b00ff",
+  "StatusLine": {
+    "Left": ["Os", "Shell", "User", "Host"],
+    "Center": ["Weather", "Uptime"],
+    "Right": ["Cpu", "SystemMemory", "Clock"],
+    "Style": "Powerline",
+    "IconSet": "NerdFont",
+    "BlendBackground": true,
+    "StartColor": "#0400fdff",
+    "EndColor": "#ff7b00ff",
+    "WeatherLocation": "Malmö"
+  }
+}

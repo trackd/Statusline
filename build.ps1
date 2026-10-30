@@ -6,19 +6,30 @@ param(
     [switch]$SkipHelp,
     [switch]$SkipTests,
     [switch]$BuildAndTestOnly,
-    [string]$Task
+    [string]$Task,
+    [ValidateSet('linux-x64', 'linux-arm64', 'win-x64', 'win-arm64', 'osx-x64', 'osx-arm64')]
+    [string]$RuntimeIdentifier,
+    [string]$NativeOutputPath,
+    [ValidateSet('Size', 'Speed')]
+    [string]$OptimizationPreference = 'Speed',
+    [switch]$VerifyTerminalIntegration
 )
 
 $ErrorActionPreference = 'Stop'
 $buildParameters = @{
-    Configuration = $Configuration
-    SkipHelp      = $SkipHelp.IsPresent
-    SkipTests     = $SkipTests.IsPresent
-    File          = Join-Path $PSScriptRoot 'StatusLine.build.ps1'
-    Task          = 'All'
-    Result        = 'buildResult'
-    Safe          = $true
+    Configuration             = $Configuration
+    SkipHelp                  = $SkipHelp.IsPresent
+    SkipTests                 = $SkipTests.IsPresent
+    NativeOutputPath          = $NativeOutputPath
+    OptimizationPreference    = $OptimizationPreference
+    VerifyTerminalIntegration = $VerifyTerminalIntegration.IsPresent
+    File                      = Join-Path $PSScriptRoot 'StatusLine.build.ps1'
+    Task                      = 'All'
+    Result                    = 'buildResult'
+    Safe                      = $true
 }
+
+if ($RuntimeIdentifier) { $buildParameters.RuntimeIdentifier = $RuntimeIdentifier }
 
 if (-not (Get-Module -ListAvailable -Name InvokeBuild)) {
     Install-Module -Name InvokeBuild -Scope CurrentUser -Force -AllowClobber

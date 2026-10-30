@@ -1,0 +1,4 @@
+_statusline_complete() {
+    mapfile -t COMPREPLY < <(__STATUSLINE_EXECUTABLE__ complete --line "${COMP_LINE:0:COMP_POINT}")
+}
+complete -F _statusline_complete statusline
