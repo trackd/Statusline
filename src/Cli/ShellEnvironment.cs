@@ -10,18 +10,22 @@ internal static class ShellEnvironment {
             if (string.IsNullOrWhiteSpace(home) || !Path.IsPathFullyQualified(home)) {
                 home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             }
+
             if (string.IsNullOrEmpty(home) || !Path.IsPathFullyQualified(home)) {
                 throw new IOException("User home directory is unavailable; supply an absolute path.");
             }
+
             return home;
         }
     }
 
     internal static string FullPath(string path) {
         if (path == "~") { return Home; }
+
         if (path.StartsWith("~/", StringComparison.Ordinal) || (OperatingSystem.IsWindows() && path.StartsWith("~\\", StringComparison.Ordinal))) {
             path = Path.Combine(Home, path[2..]);
         }
+
         return Path.GetFullPath(path);
     }
 
@@ -36,13 +40,16 @@ internal static class ShellEnvironment {
                     int end = stat.LastIndexOf(')');
                     string name = stat[(stat.IndexOf('(') + 1)..end].TrimStart('-');
                     if (depth > 0 && name is "bash" or "zsh" or "fish") { return name; }
+
                     processId = int.Parse(stat[(end + 2)..].Split(' ', 3)[1], CultureInfo.InvariantCulture);
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or FormatException) { break; }
             }
         }
+
         string? loginShell = Path.GetFileName(Environment.GetEnvironmentVariable("SHELL"));
         if (loginShell is "bash" or "zsh" or "fish") { return loginShell; }
+
         throw new ArgumentException("Cannot identify the calling shell. Specify init bash, init zsh, or init fish.");
     }
 }

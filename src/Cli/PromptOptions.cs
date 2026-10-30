@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace StatusLine.Cli;
 
 internal sealed class PromptOptions {
@@ -27,10 +25,3 @@ internal sealed class PromptOptions {
     public int BlockTimeoutMilliseconds { get; set; } = 2000;
     public DirectoryDisplayStyle DirectoryStyle { get; set; } = DirectoryDisplayStyle.Home;
 }
-
-[JsonSourceGenerationOptions(UseStringEnumConverter = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
-[JsonSerializable(typeof(PromptOptions))]
-[JsonSerializable(typeof(SessionRequest))]
-[JsonSerializable(typeof(SessionResponse))]
-[JsonSerializable(typeof(SessionOwner))]
-internal sealed partial class ConfigurationJson : JsonSerializerContext;

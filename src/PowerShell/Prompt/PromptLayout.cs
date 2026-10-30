@@ -46,6 +46,10 @@ internal sealed class PromptLayout {
         }
 
         Configuration = configuration.Copy();
+        Symbol = TerminalText.Sanitize(Configuration.Symbol, keepStyles: false);
+        TransientSymbol = TerminalText.Sanitize(Configuration.TransientSymbol, keepStyles: false);
+        ContextSymbol = TerminalText.Sanitize(Configuration.ContextSymbol, keepStyles: false);
+        InputLinePrefix = TerminalText.Sanitize(Configuration.InputLinePrefix, keepStyles: false);
         StartColor = BlockSnapshots.ColorValue(configuration.StartColor);
         EndColor = BlockSnapshots.ColorValue(configuration.EndColor);
         BlockGradient.Validate(StartColor, EndColor);
@@ -78,6 +82,10 @@ internal sealed class PromptLayout {
     }
 
     public PromptConfiguration Configuration { get; }
+    internal string Symbol { get; }
+    internal string TransientSymbol { get; }
+    internal string ContextSymbol { get; }
+    internal string InputLinePrefix { get; }
     public BlockSelector[] Left { get; }
     public BlockSelector[] Right { get; }
     public BlockSelector[] Input { get; }

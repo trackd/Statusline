@@ -10,7 +10,14 @@ internal static class StatusFile {
 
     public static string? LastError { get; private set; }
 
-    public static bool TryWrite(string path, ReadOnlySpan<char> text) {
+    public static bool TryWrite(string path, ReadOnlySpan<char> text) => Write(path, text, null);
+
+    // Prepare the file outside a host's state lock, then let the host conditionally
+    // publish it under that lock. A superseded frame never replaces newer state.
+    internal static bool TryWriteIfCurrent(string path, ReadOnlySpan<char> text, Func<string, string, bool> publish) =>
+        Write(path, text, publish);
+
+    private static bool Write(string path, ReadOnlySpan<char> text, Func<string, string, bool>? publish) {
         // One writer per process owns the status line, so a per-process temporary name is unique.
         string temporary = Temporary(path);
         byte[] bytes = ArrayPool<byte>.Shared.Rent(Utf8.GetMaxByteCount(text.Length));
@@ -20,7 +27,12 @@ internal static class StatusFile {
                 stream.Write(bytes, 0, count);
             }
 
-            File.Move(temporary, path, overwrite: true);
+            if (publish is null) { File.Move(temporary, path, overwrite: true); }
+            else if (!publish(temporary, path)) {
+                TryDelete(temporary);
+                return false;
+            }
+
             LastError = null;
             return true;
         }

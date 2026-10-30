@@ -304,6 +304,7 @@ internal static class StatusLineRenderer {
                     AppendCapStyle(builder, colors.Background, neutralBackground);
                     builder.Append(Glyphs.LeftCap);
                 }
+
                 if (separated) {
                     if (!first) {
                         if (right) {
@@ -326,12 +327,14 @@ internal static class StatusLineRenderer {
                             AppendTransparentEdge(builder, colors.Background, arrow);
                         }
                     }
+
                     AppendSegmentBody(builder, block, colors);
                 }
                 else if (!arrows) {
                     if (!first) {
                         AppendGap(builder, neutralBackground);
                     }
+
                     AppendCapStyle(builder, colors.Background, neutralBackground);
                     builder.Append(Glyphs.LeftCap);
                     AppendSegmentBody(builder, block, colors);
@@ -370,6 +373,7 @@ internal static class StatusLineRenderer {
                 AppendCapStyle(builder, previous, neutralBackground);
                 builder.Append(arrow);
             }
+
             if (right && roundOuterEdges && arrows) {
                 AppendCapStyle(builder, previous, neutralBackground);
                 builder.Append(Glyphs.RightCap);

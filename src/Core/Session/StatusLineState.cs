@@ -27,5 +27,4 @@ public sealed partial record StatusLineState {
     public int RunspaceCount { get; init; }
     /// <summary>History ID reported by the current prompt invocation; null outside a captured prompt.</summary>
     public long? HistoryId { get; init; }
-
 }

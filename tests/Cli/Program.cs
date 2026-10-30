@@ -13,6 +13,8 @@ internal static partial class Program {
     private sealed record TestResult(string Name, bool Passed, string? Error);
 
     public static int Main(string[] args) {
+        if (args is ["--performance-unit-tests"]) { PerformanceUnitCases(); return failed == 0 ? 0 : 1; }
+        if (args is ["--stable-file-test", string stableBinary]) { binary = Path.GetFullPath(stableBinary); Case("UnchangedStatusFilesAreNotRewrittenAndFailuresRetry", StableStatusFile); return failed == 0 ? 0 : 1; }
         if (args is ["--shell-block", string shellBinary]) { binary = Path.GetFullPath(shellBinary); Case("ShellBlockShowsAdapterIdentityAndOmitsUnavailableData", ShellBlock); return failed == 0 ? 0 : 1; }
         if (args is ["--fixture-cleanup"]) { Case("FixtureCleanupRemovesReadOnlyGitObjects", ReadOnlyGitCleanup); return failed == 0 ? 0 : 1; }
         if (args is ["--worker-start", string workerBinary]) { binary = Path.GetFullPath(workerBinary); Case("WorkerStartupClosesLauncherStreams", WorkerStartupStreams); return failed == 0 ? 0 : 1; }
@@ -28,6 +30,7 @@ internal static partial class Program {
             return 0;
         }
         binary = Path.GetFullPath(args[0]);
+        PerformanceUnitCases();
         Case("StandaloneNativeExecutable", Standalone);
         Case("ShellBlockShowsAdapterIdentityAndOmitsUnavailableData", ShellBlock);
         Case("ArgumentAndConfigurationErrors", InvalidInput);
@@ -44,6 +47,7 @@ internal static partial class Program {
         Case("CommandRefreshPolicyAndDisabledIdleTimeout", CommandRefresh);
         Case("RapidAndFragmentedWorkerRequests", RapidRequests);
         Case("StatusLineReadPreservesShellSnapshot", StatusRead);
+        Case("UnchangedStatusFilesAreNotRewrittenAndFailuresRetry", StableStatusFile);
         Case("CloudEnvironmentChangeRestartsWorker", CloudEnvironment);
         Case("PortableGradientAndTextContrast", PortableColors);
         Case("PersistentShellTransportAndEnvironmentRestart", PersistentTransport);

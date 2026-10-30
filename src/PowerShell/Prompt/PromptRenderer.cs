@@ -17,7 +17,7 @@ internal static class PromptRenderer {
             };
         }
 
-        string symbol = TerminalText.Sanitize(transient ? configuration.TransientSymbol : configuration.Symbol, keepStyles: false);
+        string symbol = transient ? layout.TransientSymbol : layout.Symbol;
         symbol = TerminalText.Clip(symbol, Math.Max(1, width - 1)).Sequence;
         if (transient) {
             string sequence = string.Empty;
@@ -46,7 +46,7 @@ internal static class PromptRenderer {
         int available = Math.Max(0, width - 1);
         string input = RenderInput(layout, context, available, symbol);
         if (layout.Rows == 2) {
-            string prefix = configuration.ConnectRows ? TerminalText.Clip(TerminalText.Sanitize(configuration.ContextSymbol, keepStyles: false), available).Sequence : string.Empty;
+            string prefix = configuration.ConnectRows ? TerminalText.Clip(layout.ContextSymbol, available).Sequence : string.Empty;
             string contextRow = StatusLineRenderer.RenderBlocks(colored, available - TerminalText.Measure(prefix), configuration.BlockSeparator, configuration.Style, useCursorPositioning: false, textContrast: configuration.TextContrast, roundOuterEdges: true);
             StringBuilder output = StringBuilderCache.Rent();
             try {
@@ -75,10 +75,10 @@ internal static class PromptRenderer {
         }
 
         if (layout.Rows == 2 && (blocks is null || blocks.Count == 0) && string.IsNullOrWhiteSpace(symbol)) {
-            symbol = TerminalText.Clip(TerminalText.Sanitize(configuration.TransientSymbol, keepStyles: false), available).Sequence;
+            symbol = TerminalText.Clip(layout.TransientSymbol, available).Sequence;
         }
 
-        string prefix = layout.Rows == 2 && configuration.ConnectRows ? TerminalText.Sanitize(configuration.InputLinePrefix, keepStyles: false) : string.Empty;
+        string prefix = layout.Rows == 2 && configuration.ConnectRows ? layout.InputLinePrefix : string.Empty;
         prefix = TerminalText.Clip(prefix, Math.Max(0, available - TerminalText.Measure(symbol))).Sequence;
         StringBuilder output = StringBuilderCache.Rent();
         try {

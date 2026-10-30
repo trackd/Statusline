@@ -214,7 +214,33 @@ task NativeLinuxPackage -Jobs NativeArchive, {
     }
 }
 
-task NativePackage -Jobs NativeLinuxPackage
+task NativeMacPackage -Jobs NativeArchive, {
+    if (-not $IsMacOS) { return }
+    $packagePath = Join-Path $nativeOutput "statusline-$($nativeManifest.ModuleVersion)-$nativeRuntime.pkg"
+    $stagingRoot = Join-Path $nativeOutput ("pkg-root-" + [guid]::NewGuid().ToString('N'))
+    $binaryDirectory = Join-Path $stagingRoot 'usr/local/bin'
+    $documentationDirectory = Join-Path $stagingRoot 'usr/local/share/doc/statusline'
+    try {
+        New-Item -ItemType Directory -Path $binaryDirectory, "$documentationDirectory/examples" -Force | Out-Null
+        Copy-Item -LiteralPath $nativeBinary -Destination "$binaryDirectory/statusline"
+        Copy-Item -LiteralPath "$PSScriptRoot/LICENSE" -Destination "$documentationDirectory/LICENSE"
+        Get-ChildItem "$PSScriptRoot/docs/examples/cli" -Filter '*.json' -File |
+            Copy-Item -Destination "$documentationDirectory/examples"
+        exec { chmod 755 "$binaryDirectory/statusline" }
+        exec { chmod -R 'u=rwX,go=rX' $stagingRoot }
+        exec { pkgbuild --root $stagingRoot --identifier io.github.trackd.statusline --version $nativeManifest.ModuleVersion --install-location / --ownership recommended $packagePath }
+        $checksum = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText("$packagePath.sha256", "$checksum  $([IO.Path]::GetFileName($packagePath))`n", [Text.UTF8Encoding]::new($false))
+    }
+    finally {
+        $resolvedRoot = [IO.Path]::GetFullPath($stagingRoot)
+        $outputPrefix = [IO.Path]::GetFullPath($nativeOutput).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if (-not $resolvedRoot.StartsWith($outputPrefix, [StringComparison]::Ordinal)) { throw 'Package staging path escaped the output directory.' }
+        if (Test-Path -LiteralPath $resolvedRoot) { Remove-Item -LiteralPath $resolvedRoot -Recurse -Force }
+    }
+}
+
+task NativePackage -Jobs NativeLinuxPackage, NativeMacPackage
 
 task Native -Jobs NativePackage
 

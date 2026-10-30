@@ -9,4 +9,10 @@
     <!-- Keep each test's array fixture local rather than sharing mutable test data. -->
     <NoWarn>$(NoWarn);CA1861</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Exercise the same portable sources without a managed CLI dependency:
+         the standalone executable tests still move and run the native file alone. -->
+    <Compile Include="../../src/Core/**/*.cs" Exclude="../../src/Core/**/bin/**;../../src/Core/**/obj/**" />
+    <Compile Include="../../src/Cli/PreparedPrompt.cs;../../src/Cli/PromptOutput.cs;../../src/Cli/PromptOptions.cs;../../src/Cli/ShellFieldReader.cs" />
+  </ItemGroup>
 </Project>

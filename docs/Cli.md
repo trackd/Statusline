@@ -24,10 +24,25 @@ export PATH="$HOME/.local/bin:$PATH"
 statusline --version
 ```
 
-Use the version and runtime identifier of your downloaded package. macOS uses a
-`.tar.gz` archive too; verify its checksum with `shasum -a 256 -c`. Windows packages
+Use the version and runtime identifier of your downloaded package. macOS includes
+both a `.tar.gz` archive and a `.pkg` installer, each with a checksum. Windows packages
 are ZIP archives. The PowerShell module remains the primary Windows entry point;
 the CLI's host-writable status output currently requires Unix.
+
+For the macOS ARM64 installer:
+
+```zsh
+shasum -a 256 -c statusline-0.2.0-osx-arm64.pkg.sha256
+sudo installer -pkg ./statusline-0.2.0-osx-arm64.pkg -target /
+```
+
+The installer places the executable in `/usr/local/bin/statusline`, with the
+license and examples under `/usr/local/share/doc/statusline`. It records the
+receipt `io.github.trackd.statusline` and does not edit shell profiles. The pkg
+is currently unsigned and not notarized; signing requires Apple Developer ID
+credentials. CI installation checks do not verify Gatekeeper acceptance of a
+downloaded installer. The archive remains available for manual use and a future
+Homebrew formula.
 
 Homebrew and Linux package repositories are not published yet. Archives and the Linux packages below
 are the current installation paths.
@@ -270,7 +285,8 @@ InvokeBuild tasks are available through the root build launcher:
 | `NativeTest` | Native publish followed by the CLI test suite |
 | `NativeArchive` | Native publish, tests, versioned archive and checksum |
 | `NativeLinuxPackage` | Archive plus Linux deb/rpm packages and checksums; archive only on other OSes |
-| `NativePackage` or `Native` | Complete native packaging, including deb/rpm on Linux |
+| `NativeMacPackage` | Archive plus a macOS pkg installer and checksum; archive only on other OSes |
+| `NativePackage` or `Native` | Complete native packaging, including deb/rpm on Linux and pkg on macOS |
 
 The default build remains module-only. Native tasks accept `-RuntimeIdentifier`,
 `-NativeOutputPath`, and `-OptimizationPreference`; the runtime defaults to this
@@ -295,6 +311,8 @@ Linux deb/rpm packages are included in both release modes. CI tests package
 installation, non-root rendering, and removal in Ubuntu 24.04, Debian 12, and
 Fedora 43 containers without an installed .NET runtime. The native Linux build
 uses Ubuntu 24.04 and derives its glibc dependency from the produced executable.
+macOS CI installs the pkg on its clean runner, checks the receipt and installed
+CLI, verifies profiles are unchanged, and removes the test installation.
 
 For the initial CLI catch-up, select `cli-only`: with the manifest at `0.2.0`, it
 builds the native packages and attaches them to the existing `v0.2.0` release.

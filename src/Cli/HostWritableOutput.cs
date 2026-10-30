@@ -17,11 +17,13 @@ internal sealed partial class HostWritableOutput : IDisposable {
         if (OperatingSystem.IsWindows()) {
             throw new ArgumentException("CLI HostWritable currently requires a Unix controlling terminal; use file output on Windows.");
         }
+
         TerminalCapability capability = TerminalCapabilities.Detect();
         if (!capability.HostWritableStatusLine &&
             (capability.Name.Equals("ghostty", StringComparison.OrdinalIgnoreCase) || !TerminfoCapabilities.HasDecStatusLine())) {
             throw new ArgumentException("This terminal is not known to support HostWritable status lines.");
         }
+
         terminal = new FileStream("/dev/tty", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, bufferSize: 1);
     }
 

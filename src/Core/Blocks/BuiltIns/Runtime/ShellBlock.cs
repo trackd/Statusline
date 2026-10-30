@@ -10,7 +10,9 @@ internal sealed class ShellBlock : IImmediateBlock {
         if (string.IsNullOrWhiteSpace(identity) && !string.IsNullOrWhiteSpace(context.PowerShellVersion)) {
             identity = "pwsh " + context.PowerShellVersion;
         }
+
         if (string.IsNullOrWhiteSpace(identity)) { return null; }
+
         return (Metadata.Icon(context.IconSet), TerminalText.Sanitize(identity, keepStyles: false), Metadata.Alignment, Cyan);
     }
 }

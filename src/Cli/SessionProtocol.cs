@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text;
@@ -57,9 +57,11 @@ internal static class SessionProtocol {
     internal static void RegisterOwner(string session, int parentPid, string? config, string? statusFile) {
         using var parent = Process.GetProcessById(parentPid);
         if (parent.HasExited) { throw new IOException("The owning shell has exited."); }
+
         var owner = new SessionOwner { ParentPid = parentPid, ParentStarted = ParentIdentity(parent), ConfigPath = config, StatusFile = statusFile };
         var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows()) { options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite; }
+
         using var file = new FileStream(OwnerFile(session), options);
         JsonSerializer.Serialize(file, owner, ConfigurationJson.Default.SessionOwner);
     }
@@ -80,19 +82,23 @@ internal static class SessionProtocol {
                 throw new IOException("Session metadata directory must be private to its owner.");
             }
         }
+
         if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) { throw new IOException("Session metadata directory cannot be a link."); }
+
         return Path.Combine(root, session + ".json");
     }
 
     internal static SessionOwner LoadOwner(string session, int parentPid) {
         string path = OwnerFile(session);
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) { throw new IOException("Session metadata cannot be a link."); }
+
         SessionOwner owner = JsonSerializer.Deserialize(File.ReadAllText(path), ConfigurationJson.Default.SessionOwner)
             ?? throw new IOException("Invalid session metadata.");
         using var parent = Process.GetProcessById(parentPid);
         if (owner.ParentPid != parentPid || owner.ParentStarted != ParentIdentity(parent)) {
             throw new ArgumentException("Session is owned by another shell.");
         }
+
         return owner;
     }
 
@@ -106,6 +112,7 @@ internal static class SessionProtocol {
             string[] fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
             return long.Parse(fields[19], System.Globalization.CultureInfo.InvariantCulture);
         }
+
         return process.StartTime.ToUniversalTime().Ticks;
     }
 
@@ -113,6 +120,7 @@ internal static class SessionProtocol {
         if (session.Length != 32 || !session.All(char.IsAsciiHexDigit)) {
             throw new ArgumentException("Session must be the token returned by start.");
         }
+
         return "statusline-" + session;
     }
 
@@ -136,9 +144,11 @@ internal static class SessionProtocol {
                 int newline = buffer.AsSpan(0, count).IndexOf('\n');
                 int length = newline < 0 ? count : newline;
                 if (text.Length + length > MaximumMessage) { throw new IOException("Session message exceeds 64 KiB."); }
+
                 text.Append(buffer.AsSpan(0, length));
                 if (newline >= 0) { return text.ToString(); }
             }
+
             throw new EndOfStreamException("Session connection closed.");
         }
         finally { ArrayPool<char>.Shared.Return(buffer); }
@@ -155,6 +165,7 @@ internal static class SessionProtocol {
         if (json.Length > MaximumMessage) {
             throw new ArgumentException("Session request exceeds 64 KiB.");
         }
+
         writer.WriteLine(json);
         string response = ReadLine(reader, cancellation.Token).GetAwaiter().GetResult();
         return JsonSerializer.Deserialize(response, ConfigurationJson.Default.SessionResponse)
@@ -167,6 +178,7 @@ internal static class SessionProtocol {
         if (parent.HasExited) {
             throw new ArgumentException("The owning shell has exited.");
         }
+
         if (File.Exists(OwnerFile(session))) {
             SessionOwner owner = LoadOwner(session, parentPid);
             config ??= owner.ConfigPath;
@@ -174,26 +186,37 @@ internal static class SessionProtocol {
             try {
                 SessionResponse running = Send(session, new(), 100);
                 if (running.ParentPid == parentPid && running.ConfigPath == config && running.StatusFile == statusFile) { return; }
+
                 throw new ArgumentException("Session is owned by another shell.");
             }
             catch (Exception exception) when (exception is TimeoutException or IOException) { }
         }
+
         var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException("Executable path unavailable.")) {
-            UseShellExecute = false, CreateNoWindow = true,
-            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
         // The worker must not inherit the launcher's caller-facing capture pipes.
         // On Windows, whitelist only its own redirected standard handles.
         if (OperatingSystem.IsWindows()) { start.InheritedHandles = []; }
+
         foreach (string argument in new[] { shellPipes ? "worker-shell" : "worker", "--session", session, "--parent-pid", parentPid.ToString(System.Globalization.CultureInfo.InvariantCulture) }) {
             start.ArgumentList.Add(argument);
         }
+
         if (config is not null) {
-            start.ArgumentList.Add("--config"); start.ArgumentList.Add(config);
+            start.ArgumentList.Add("--config");
+            start.ArgumentList.Add(config);
         }
+
         if (statusFile is not null) {
-            start.ArgumentList.Add("--status-file"); start.ArgumentList.Add(statusFile);
+            start.ArgumentList.Add("--status-file");
+            start.ArgumentList.Add(statusFile);
         }
+
         using Process worker = Process.Start(start) ?? throw new IOException("Worker failed to start.");
         using var startup = new StartupCleanup(worker);
         worker.StandardInput.Close();
@@ -206,11 +229,13 @@ internal static class SessionProtocol {
             if (worker.HasExited) {
                 throw new IOException("Worker exited during startup: " + errors.GetAwaiter().GetResult());
             }
+
             try {
                 SessionResponse response = Send(session, new(), 100);
                 if (response.WorkerPid != worker.Id || response.ParentPid != parentPid) {
                     throw new ArgumentException("Session token is already owned by another worker.");
                 }
+
                 var owner = new SessionOwner { ParentPid = parentPid, ParentStarted = ParentIdentity(parent), ConfigPath = config, StatusFile = statusFile };
                 string ownerPath = OwnerFile(session);
                 var fileOptions = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
@@ -220,6 +245,7 @@ internal static class SessionProtocol {
                 using (var file = new FileStream(ownerPath, fileOptions)) {
                     JsonSerializer.Serialize(file, owner, ConfigurationJson.Default.SessionOwner);
                 }
+
                 startup.Ready = true;
                 return;
             }
@@ -227,6 +253,7 @@ internal static class SessionProtocol {
                 Thread.Sleep(20);
             }
         }
+
         throw new IOException("Worker did not become ready within five seconds.");
     }
 
@@ -236,6 +263,7 @@ internal static class SessionProtocol {
         internal StartupCleanup(Process process) { this.process = process; }
         public void Dispose() {
             if (Ready) { return; }
+
             try { if (!process.HasExited) { process.Kill(entireProcessTree: true); } }
             catch (InvalidOperationException) { /* It exited between the check and termination. */ }
         }

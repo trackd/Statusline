@@ -6,7 +6,7 @@ Describe 'Release artifact selection' {
     BeforeEach {
         $assetPath = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $assetPath | Out-Null
-        foreach ($name in 'statusline-0.2.0-linux-x64.tar.gz', 'statusline-0.2.0-linux-x64.deb', 'statusline-0.2.0-linux-x64.rpm', 'statusline-0.2.0-win-x64.zip', 'statusline-0.2.0-osx-arm64.tar.gz') {
+        foreach ($name in 'statusline-0.2.0-linux-x64.tar.gz', 'statusline-0.2.0-linux-x64.deb', 'statusline-0.2.0-linux-x64.rpm', 'statusline-0.2.0-win-x64.zip', 'statusline-0.2.0-osx-arm64.tar.gz', 'statusline-0.2.0-osx-arm64.pkg') {
             $archivePath = Join-Path $assetPath $name
             [IO.File]::WriteAllText($archivePath, 'archive fixture')
             $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -16,7 +16,8 @@ Describe 'Release artifact selection' {
 
     It 'selects native archives and Linux packages with checksums without requiring a module package' {
         $assets = @(& $assetScript -Version 0.2.0 -Path $assetPath -NativeOnly)
-        $assets.Count | Should -Be 10
+        $assets.Count | Should -Be 12
+        $assets.Name | Should -Contain 'statusline-0.2.0-osx-arm64.pkg'
         $assets.Name | Should -Contain 'statusline-0.2.0-linux-x64.deb'
         $assets.Name | Should -Contain 'statusline-0.2.0-linux-x64.rpm'
         $assets.Name | Should -Contain 'statusline-0.2.0-linux-x64.tar.gz'
@@ -28,13 +29,18 @@ Describe 'Release artifact selection' {
         { & $assetScript -Version 0.2.0 -Path $assetPath } | Should -Throw '*StatusLine.0.2.0.nupkg*'
         [IO.File]::WriteAllText((Join-Path $assetPath 'StatusLine.0.2.0.nupkg'), 'module fixture')
         $assets = @(& $assetScript -Version 0.2.0 -Path $assetPath)
-        $assets.Count | Should -Be 11
+        $assets.Count | Should -Be 13
         $assets.Name | Should -Contain 'StatusLine.0.2.0.nupkg'
     }
 
     It 'rejects a missing Linux package or its checksum' {
         Remove-Item -LiteralPath (Join-Path $assetPath 'statusline-0.2.0-linux-x64.rpm.sha256')
         { & $assetScript -Version 0.2.0 -Path $assetPath -NativeOnly } | Should -Throw '*rpm.sha256*'
+    }
+
+    It 'requires the macOS installer and its checksum' {
+        Remove-Item -LiteralPath (Join-Path $assetPath 'statusline-0.2.0-osx-arm64.pkg.sha256')
+        { & $assetScript -Version 0.2.0 -Path $assetPath -NativeOnly } | Should -Throw '*pkg.sha256*'
     }
 
     It 'rejects missing targets and version mismatches' {

@@ -1,16 +1,19 @@
 using System.CommandLine;
+using System.CommandLine.Completions;
+using System.CommandLine.Parsing;
 
 namespace StatusLine.Cli;
 
 internal static class CommandLine {
     internal static int Invoke(string[] args) {
         var root = new RootCommand("StatusLine prompt and asynchronous status bar. Initialize with statusline init; render the bar with statusline statusline.");
-        root.Directives.Add(new System.CommandLine.Completions.SuggestDirective());
+        root.Directives.Add(new SuggestDirective());
         bool statusBar = args.FirstOrDefault() == "statusline";
         foreach (string name in new[] { "prompt", "statusline", "transient", "command-start", "init", "start", "serve", "worker", "worker-shell", "channel", "info", "stop" }) {
             // System.CommandLine rejects a child named identically to the executable.
             // Parse the existing 'statusline statusline' command as a standalone root.
             if (statusBar ? name != "statusline" : name == "statusline") { continue; }
+
             Command command = statusBar ? root : new Command(name, Description(name)) { Hidden = name is "worker" or "worker-shell" or "serve" or "channel" };
             var options = new List<Option<string>>();
             string[] names = name switch {
@@ -20,15 +23,20 @@ internal static class CommandLine {
                 _ => ["--config", "--cwd", "--width", "--status", "--duration-ms", "--shell", "--session", "--parent-pid", "--status-file", "--integration-owner"],
             };
             foreach (string optionName in names.Concat(name == "command-start" ? ["--command"] : Array.Empty<string>())) {
-                var option = new Option<string>(optionName) { Arity = ArgumentArity.ExactlyOne, Description = OptionDescription(optionName) };
-                option.Hidden = optionName == "--integration-owner";
+                var option = new Option<string>(optionName) {
+                    Arity = ArgumentArity.ExactlyOne,
+                    Description = OptionDescription(optionName),
+                    Hidden = optionName == "--integration-owner"
+                };
                 option.Validators.Add(result => {
                     if (result.Tokens.Count > 1) { result.AddError($"Repeated option: {optionName}."); }
                 });
                 if (optionName == "--shell") { option.AcceptOnlyFromAmong("raw", "bash", "zsh", "fish"); }
+
                 command.Options.Add(option);
                 options.Add(option);
             }
+
             var shell = new Argument<string>("shell") { Arity = ArgumentArity.ZeroOrOne, Description = "Shell adapter; inferred from the calling shell when omitted." };
             var install = new Option<bool>("--install") { Description = "Install a managed hook in the shell profile (opt in)." };
             var uninstall = new Option<bool>("--uninstall") { Description = "Remove the managed hook from the shell profile." };
@@ -38,19 +46,24 @@ internal static class CommandLine {
                 command.Options.Add(install);
                 command.Options.Add(uninstall);
             }
+
             command.SetAction(result => {
                 var values = new Dictionary<string, string>(StringComparer.Ordinal);
                 foreach (Option<string> option in options) {
                     if (result.GetValue(option) is { } value) { values.Add(option.Name, value); }
                 }
+
                 if (name == "init") {
                     if (result.GetValue(install)) { values.Add("--install", "true"); }
+
                     if (result.GetValue(uninstall)) { values.Add("--uninstall", "true"); }
                 }
+
                 return Program.Run(name, name == "init" ? result.GetValue(shell) : null, values);
             });
             if (!statusBar) { root.Subcommands.Add(command); }
         }
+
         var complete = new Command("complete", "Return completion candidates for shell adapters.");
         var line = new Option<string>("--line") { Required = true, Description = "Command line to complete." };
         var position = new Option<int?>("--position") { Description = "Cursor position; defaults to the end of the command line." };
@@ -60,18 +73,24 @@ internal static class CommandLine {
             string text = result.GetValue(line)!;
             int cursor = result.GetValue(position) ?? text.Length;
             if (cursor < 0 || cursor > text.Length) { throw new ArgumentException("Completion cursor is outside the command line."); }
-            foreach (var candidate in root.Parse(text).GetCompletions(cursor)) { Console.WriteLine(candidate.InsertText); }
+
+            foreach (CompletionItem candidate in root.Parse(text).GetCompletions(cursor)) { Console.WriteLine(candidate.InsertText); }
+
             return 0;
         });
         if (!statusBar) {
             root.Subcommands.Add(complete);
         }
+
         if (args.Length == 0 || args is ["help"]) { args = ["--help"]; }
-        var parsed = root.Parse(statusBar ? args[1..] : args);
+
+        ParseResult parsed = root.Parse(statusBar ? args[1..] : args);
         if (parsed.Errors.Count > 0) {
-            foreach (var error in parsed.Errors) { Console.Error.WriteLine("statusline: " + error.Message); }
+            foreach (ParseError error in parsed.Errors) { Console.Error.WriteLine("statusline: " + error.Message); }
+
             return 2;
         }
+
         return parsed.Invoke(new InvocationConfiguration { EnableDefaultExceptionHandler = false });
     }
 
@@ -87,11 +106,16 @@ internal static class CommandLine {
     };
 
     private static string OptionDescription(string name) => name switch {
-        "--config" => "JSON configuration file.", "--cwd" => "Absolute working directory.",
-        "--width" => "Terminal width in cells (2–10000).", "--status" => "Previous command exit status.",
-        "--duration-ms" => "Previous command duration in milliseconds.", "--shell" => "Output escaping convention.",
-        "--session" => "Worker session token.", "--parent-pid" => "Owning shell process ID.",
+        "--config" => "JSON configuration file.",
+        "--cwd" => "Absolute working directory.",
+        "--width" => "Terminal width in cells (2–10000).",
+        "--status" => "Previous command exit status.",
+        "--duration-ms" => "Previous command duration in milliseconds.",
+        "--shell" => "Output escaping convention.",
+        "--session" => "Worker session token.",
+        "--parent-pid" => "Owning shell process ID.",
         "--profile" => "Profile file to update with --install or --uninstall.",
-        "--command" => "Command text for shell integration.", _ => "Status bar output file.",
+        "--command" => "Command text for shell integration.",
+        _ => "Status bar output file.",
     };
 }

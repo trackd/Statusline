@@ -25,6 +25,7 @@ internal static class ProfileHooks {
             info = new FileInfo(target);
             if (!info.Exists) { throw new IOException("Profile link has no existing target."); }
         }
+
         string original = string.Empty;
         Encoding encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
         if (info.Exists) {
@@ -32,32 +33,40 @@ internal static class ProfileHooks {
             original = reader.ReadToEnd();
             encoding = reader.CurrentEncoding;
         }
+
         string newline = original.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         int begin = Marker(original, Begin);
         int end = Marker(original, End);
         if ((begin < 0) != (end < 0) || (end >= 0 && end < begin)) {
             throw new IOException("Incomplete StatusLine hook markers; profile was not changed.");
         }
+
         string block = install ? Block(shell, config, statusFile, newline) : string.Empty;
         string changed;
         if (begin >= 0) {
             int after = end + End.Length;
             if (after < original.Length && original[after] == '\r') { after++; }
+
             if (after < original.Length && original[after] == '\n') { after++; }
+
             changed = string.Concat(original.AsSpan(0, begin), block, original.AsSpan(after));
         }
         else if (install) {
             changed = original + (original.Length > 0 && original[^1] != '\n' ? newline : string.Empty) + block;
         }
         else { return false; }
+
         if (changed == original) { return false; }
+
         if (info.Exists && info.IsReadOnly) { throw new IOException("Profile is read-only."); }
-        string? directory = Path.GetDirectoryName(target);
-        if (directory is null) { throw new IOException("Profile requires a parent directory."); }
+
+        string? directory = Path.GetDirectoryName(target) ?? throw new IOException("Profile requires a parent directory.");
+
         Directory.CreateDirectory(directory);
         if (install && info.Exists && !File.Exists(target + ".statusline.bak")) {
             File.Copy(target, target + ".statusline.bak");
         }
+
         string temporary = Path.Combine(directory, ".statusline-" + Guid.NewGuid().ToString("N"));
         UnixFileMode? originalMode = OperatingSystem.IsWindows() ? null : info.Exists
             ? File.GetUnixFileMode(target) : UnixFileMode.UserRead | UnixFileMode.UserWrite;
@@ -66,6 +75,7 @@ internal static class ProfileHooks {
             if (!OperatingSystem.IsWindows()) {
                 options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             }
+
             using (var file = new FileStream(temporary, options)) {
                 file.Write(encoding.GetPreamble());
                 file.Write(encoding.GetBytes(changed));
@@ -74,10 +84,12 @@ internal static class ProfileHooks {
             // Creation permissions are masked by umask; restore the exact original
             // mode after writing the private temporary file, before replacing it.
             if (!OperatingSystem.IsWindows() && originalMode is { } mode) { File.SetUnixFileMode(temporary, mode); }
+
             if (info.Exists) { File.Replace(temporary, target, destinationBackupFileName: null); }
             else { File.Move(temporary, target); }
         }
         finally { if (File.Exists(temporary)) { File.Delete(temporary); } }
+
         return true;
     }
 
@@ -87,12 +99,16 @@ internal static class ProfileHooks {
         foreach (ReadOnlySpan<char> line in text.AsSpan().EnumerateLines()) {
             if (line.SequenceEqual(marker)) {
                 if (found >= 0) { throw new IOException("Multiple StatusLine hook blocks; profile was not changed."); }
+
                 found = offset;
             }
+
             offset += line.Length;
             if (offset < text.Length && text[offset] == '\r') { offset++; }
+
             if (offset < text.Length && text[offset] == '\n') { offset++; }
         }
+
         return found;
     }
 
@@ -101,7 +117,9 @@ internal static class ProfileHooks {
         // Homebrew Cellar or package-manager directory in the user's profile.
         string command = "command statusline init " + shell;
         if (config is not null) { command += " --config " + Quote(config, shell); }
+
         if (statusFile is not null) { command += " --status-file " + Quote(statusFile, shell); }
+
         string[] lines = shell == "fish"
             ? [Begin, "if status is-interactive", "    " + command + " | source", "end", End, ""]
             : [Begin, "if [[ $- == *i* ]]; then", "    eval \"$(" + command + ")\"", "fi", End, ""];

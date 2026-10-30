@@ -70,6 +70,11 @@ jobs:
         run: |
           $version = (Import-PowerShellDataFile ./module/StatusLine.psd1).ModuleVersion
           ./tests/Cli/Test-Packages.ps1 -Path ./artifacts/native/linux-x64 -Version $version
+      - name: Test macOS installer
+        if: runner.os == 'macOS'
+        run: |
+          $version = (Import-PowerShellDataFile ./module/StatusLine.psd1).ModuleVersion
+          ./tests/Cli/Test-MacPackage.ps1 -Path './artifacts/native/${{ matrix.rid }}' -RuntimeIdentifier '${{ matrix.rid }}' -Version $version
       - name: Retain executable
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -79,6 +84,7 @@ jobs:
             artifacts/native/${{ matrix.rid }}/*.zip
             artifacts/native/${{ matrix.rid }}/*.deb
             artifacts/native/${{ matrix.rid }}/*.rpm
+            artifacts/native/${{ matrix.rid }}/*.pkg
             artifacts/native/${{ matrix.rid }}/*.sha256
           if-no-files-found: error
       - name: Retain failed build diagnostics
