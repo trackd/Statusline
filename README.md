@@ -2,7 +2,7 @@
 
 PowerShell prompts and a live terminal status line built from the same reusable blocks.
 Display project context, command results, and system activity in either surface.
-An experimental native CLI brings the same renderer and built-in blocks to Bash,
+A native CLI brings the same renderer and built-in blocks to Bash,
 Zsh, and Fish, without requiring PowerShell or a .NET runtime.
 
 ## Features
@@ -15,7 +15,7 @@ Zsh, and Fish, without requiring PowerShell or a .NET runtime.
 - **Shell integration** — prompt and command markers, exit status, and working-directory reporting
   for supported terminals, with optional terminal progress.
 
-Importing StatusLine leaves your prompt alone. Enable the features you want, when you want them.
+Importing the module does not change the prompt. Enable the prompt and status line separately.
 
 ## Previews
 
@@ -33,16 +33,17 @@ Rows labelled "sample" use fixed session counts, weather, uptime, CPU, and RAM v
 
 ## Install
 
-```
+```powershell
 Install-Module Statusline
 ```
 
 ### Bash, Zsh, and Fish
 
-The CLI is a single `statusline` executable. Download a matching native package
-from [GitHub Releases](https://github.com/trackd/Statusline/releases) when available,
-or use a build artifact from [Native executable](https://github.com/trackd/Statusline/actions/workflows/native.yml).
-Extract it and put `statusline` on your `PATH`, then initialize your shell:
+Download the package for your platform from
+[GitHub Releases](https://github.com/trackd/Statusline/releases): Linux packages
+are available as `.deb`, `.rpm`, and `.tar.gz`; macOS ARM64 as `.pkg` and `.tar.gz`.
+Install the package, or extract the archive to a directory on `PATH`, then
+initialize StatusLine in your shell:
 
 ```bash
 # Bash
@@ -59,10 +60,10 @@ eval "$(statusline init zsh)"
 statusline init fish | source
 ```
 
-These enable the default prompt for the current session. Add `--config` for JSON
-configuration or `--install` to opt into profile setup. The live status bar is
-enabled separately and currently needs a supported Unix terminal such as Contour;
-the prompt works independently of status-bar support.
+These commands enable the default prompt for the current session. Use `--config PATH`
+to load a JSON configuration, or `--install` to save the initialization hook in your
+shell profile. The live status bar is enabled separately and requires a supported
+Unix terminal such as Contour. The prompt also works in terminals without status-bar support.
 
 See the [CLI guide](docs/Cli.md) for installation, persistent setup,
 [supported blocks](docs/Cli.md#supported-blocks), and
@@ -212,7 +213,7 @@ script output between the prompt and statusline. No registration or unregister s
 ## Learn more
 
 - [Native CLI guide](docs/Cli.md) — Bash, Zsh, and Fish setup, configuration examples,
-  supported blocks, and native build and release tasks.
+  supported blocks, and configuration examples.
 - [Configuration guide](docs/Configuration.md) — layouts, colors, directory display, idle behavior,
   terminal compatibility, and troubleshooting.
 - [File output for Contour](docs/Configuration.md#file-output-and-contour-program) — an alternative
