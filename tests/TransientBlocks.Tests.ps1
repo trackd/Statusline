@@ -48,9 +48,9 @@ Describe 'Cached transient blocks' -Tag Contract {
     }
 
     It 'does not refresh a script provider during a transient redraw' {
-        $marker = Join-Path $TestDrive 'transient-value'
-        Set-Content -LiteralPath $marker 'original'
-        $scriptText = "Get-Content -LiteralPath '" + $marker.Replace("'", "''") + "'"
+        $variableName = 'STATUSLINE_TEST_TRANSIENT_' + [guid]::NewGuid().ToString('N')
+        [Environment]::SetEnvironmentVariable($variableName, 'original')
+        $scriptText = "[Environment]::GetEnvironmentVariable('$variableName')"
         $transientValue = New-StatusLineBlock -Name transientValue -ScriptBlock ([scriptblock]::Create($scriptText)) -IntervalMilliseconds 250
         try {
             $configuration = New-TestPromptConfiguration @{
@@ -59,20 +59,21 @@ Describe 'Cached transient blocks' -Tag Contract {
                 Style = 'Plain'; IconSet = 'None'; Padding = ''
                 TransientSymbol = '> '; Symbol = '> '; ShellIntegration = 'None'
             }
-            Enable-Prompt -Configuration $configuration -TransientBlock $transientValue
-            $null = & prompt
-            Start-Sleep -Milliseconds 500
-            $null = & prompt
-            Set-Content -LiteralPath $marker 'changed'
+            Enable-Prompt -Configuration $configuration -Block $transientValue -TransientBlock $transientValue
+            Wait-RefreshCondition { ((& prompt) -replace '\x1b\[[0-9;]*m') -match 'original' }
+            [Environment]::SetEnvironmentVariable($variableName, 'changed')
             Start-Sleep -Milliseconds 350
             [StatusLine.PromptSession]::BeginTransient([runspace]::DefaultRunspace)
             $first = & prompt
             ($first -replace '\x1b\[[0-9;]*m') | Should -Match 'original'
             (& prompt) | Should -BeExactly $first
+            [StatusLine.PromptSession]::EndTransient([runspace]::DefaultRunspace)
+            Wait-RefreshCondition { ((& prompt) -replace '\x1b\[[0-9;]*m') -match 'changed' }
         }
         finally {
             [StatusLine.PromptSession]::EndTransient([runspace]::DefaultRunspace)
             $transientValue.Dispose()
+            [Environment]::SetEnvironmentVariable($variableName, $null)
         }
     }
 
