@@ -2,7 +2,7 @@
 .SYNOPSIS
 Validates and returns the packages to attach to a release.
 .DESCRIPTION
-Requires each configured native package and matching SHA256 file for every target.
+Requires each configured native package for every target.
 The module package is also required unless NativeOnly is specified.
 .PARAMETER Version
 Shared module and CLI version.
@@ -35,7 +35,6 @@ foreach ($target in $targets) {
     foreach ($extension in $target.packages) {
         $archiveName = "statusline-$Version-$($target.rid).$extension"
         $expected.Add($archiveName)
-        $expected.Add("$archiveName.sha256")
     }
 }
 if (-not $NativeOnly.IsPresent) { $expected.Add("StatusLine.$Version.nupkg") }
@@ -45,15 +44,5 @@ foreach ($name in $expected) {
 }
 if (@($files | Where-Object { $_.Name -cnotin $expected }).Count) {
     throw 'Release artifacts contain unexpected files or mismatched versions.'
-}
-foreach ($checksum in $files | Where-Object Extension -EQ '.sha256') {
-    $archiveName = $checksum.Name -replace '\.sha256$', ''
-    $archive = $files | Where-Object Name -CEQ $archiveName
-    $record = [IO.File]::ReadAllText($checksum.FullName).Trim()
-    $match = [regex]::Match($record, '^([0-9a-fA-F]{64})  (.+)$')
-    if (-not $match.Success -or $match.Groups[2].Value -cne $archiveName -or
-        (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash -ine $match.Groups[1].Value) {
-        throw "Invalid checksum for $archiveName."
-    }
 }
 $files | Sort-Object Name

@@ -6,66 +6,60 @@ runtime installation. It shares its renderer and providers with the PowerShell m
 
 ## Install the executable
 
-Native packages are built for Linux x64, Windows x64, and macOS ARM64. Get a
-matching archive and its `.sha256` file from
-[GitHub Releases](https://github.com/trackd/Statusline/releases) when published.
-Development builds are available from the
-[Native executable workflow](https://github.com/trackd/Statusline/actions/workflows/native.yml).
-GitHub Actions downloads wrap the package and checksum in a ZIP; extract that
-first to reach the native archive.
+Download the package for your platform from
+[GitHub Releases](https://github.com/trackd/Statusline/releases).
 
-For example, once you have downloaded the Linux `0.2.0` package and checksum:
+| Platform | Packages |
+| --- | --- |
+| Linux x64 | `.deb`, `.rpm`, `.tar.gz` |
+| macOS ARM64 | `.pkg`, `.tar.gz` |
+| Windows x64 | `.zip` |
+
+GitHub displays a SHA256 digest beside each release asset and exposes it through
+the release API. To verify a download, compare that digest with the output of
+`sha256sum FILE` on Linux, `shasum -a 256 FILE` on macOS, or
+`Get-FileHash FILE -Algorithm SHA256` in PowerShell.
+
+For example, once you have downloaded the Linux `0.2.0` archive:
 
 ```bash
-sha256sum -c statusline-0.2.0-linux-x64.tar.gz.sha256
 mkdir -p "$HOME/.local/bin"
 tar -xzf statusline-0.2.0-linux-x64.tar.gz -C "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 statusline --version
 ```
 
-Use the version and runtime identifier of your downloaded package. macOS includes
-both a `.tar.gz` archive and a `.pkg` installer, each with a checksum. Windows packages
-are ZIP archives. The PowerShell module remains the primary Windows entry point;
-the CLI's host-writable status output currently requires Unix.
+Replace `0.2.0` with the version you downloaded. For Windows, extract the ZIP
+and add its directory to `PATH`. The CLI's host-writable status output requires
+Unix; the PowerShell module provides the Windows prompt and status-line integration.
 
 For the macOS ARM64 installer:
 
 ```zsh
-shasum -a 256 -c statusline-0.2.0-osx-arm64.pkg.sha256
 sudo installer -pkg ./statusline-0.2.0-osx-arm64.pkg -target /
 ```
 
 The installer places the executable in `/usr/local/bin/statusline`, with the
 license and examples under `/usr/local/share/doc/statusline`. It records the
-receipt `io.github.trackd.statusline` and does not edit shell profiles. The pkg
-is currently unsigned and not notarized; signing requires Apple Developer ID
-credentials. CI installation checks do not verify Gatekeeper acceptance of a
-downloaded installer. The archive remains available for manual use and a future
-Homebrew formula.
+receipt `io.github.trackd.statusline` and does not edit shell profiles. The installer
+is unsigned and not notarized. The `.tar.gz` archive supports manual installation.
 
-Homebrew and Linux package repositories are not published yet. Archives and the Linux packages below
-are the current installation paths.
-
-Linux x64 builds also include `.deb` and `.rpm` packages, each with a `.sha256`
-file. Download the package matching your distribution, verify its checksum,
-then install it with dependency resolution:
+Linux x64 builds also include `.deb` and `.rpm` packages. Download the package
+matching your distribution, then install it with dependency resolution:
 
 ```bash
 # Debian / Ubuntu
-sha256sum -c statusline-0.2.0-linux-x64.deb.sha256
 sudo apt install ./statusline-0.2.0-linux-x64.deb
 
 # Fedora
-sha256sum -c statusline-0.2.0-linux-x64.rpm.sha256
 sudo dnf install ./statusline-0.2.0-linux-x64.rpm
 ```
 
 The executable is installed as `/usr/bin/statusline`; example configurations
 are under `/usr/share/doc/statusline/examples`. Installation leaves shell
 profiles alone: initialize your chosen shell explicitly as described below.
-These are downloadable packages, not configured APT/DNF repositories. The
-packages are not GPG-signed yet; checksum files accompany the release assets.
+Install these files directly; no APT or DNF repository is configured. The packages
+are not GPG-signed.
 
 ## Shell setup
 
@@ -197,7 +191,7 @@ The optional `StatusLine` object configures the bar separately from the prompt.
 Without it, the bar shows Git, uptime, CPU, system memory and clock. Enabling a
 prompt alone does not allocate a status area.
 
-HostWritable currently requires a supported Unix terminal. Ghostty does not
+HostWritable requires a supported Unix terminal. Ghostty does not
 support this display; its prompt integration remains available. Windows users
 can use file output.
 
@@ -264,72 +258,3 @@ Run `statusline --help` for commands and options. Useful standalone commands inc
 Standalone renders without a session token retain caches only for that invocation.
 PowerShell session blocks, script-block providers and `ProcessMemory` remain
 module-only. Abrupt termination such as SIGKILL cannot perform terminal cleanup.
-
-## Build and test
-
-Building the CLI requires the .NET 11 SDK or newer. Native AOT publishing must run
-on the target operating system; Ubuntu also needs `clang` and `zlib1g-dev`.
-
-```powershell
-./build.ps1 -Task NativeBuild
-pwsh -NoProfile -NonInteractive -File build.ps1 -Task Native -RuntimeIdentifier linux-x64
-```
-
-The managed build runs trim/AOT compatibility checks without native compilation.
-InvokeBuild tasks are available through the root build launcher:
-
-| Task | Operation |
-| --- | --- |
-| `NativeBuild` | Managed CLI build and trim/AOT analysis |
-| `NativePublish` | Native compilation and executable smoke test |
-| `NativeTest` | Native publish followed by the CLI test suite |
-| `NativeArchive` | Native publish, tests, versioned archive and checksum |
-| `NativeLinuxPackage` | Archive plus Linux deb/rpm packages and checksums; archive only on other OSes |
-| `NativeMacPackage` | Archive plus a macOS pkg installer and checksum; archive only on other OSes |
-| `NativePackage` or `Native` | Complete native packaging, including deb/rpm on Linux and pkg on macOS |
-
-The default build remains module-only. Native tasks accept `-RuntimeIdentifier`,
-`-NativeOutputPath`, and `-OptimizationPreference`; the runtime defaults to this
-machine's operating system and architecture.
-
-The Native task builds the executable, runs its checks, and creates an archive
-with a SHA256 checksum. On Linux it also uses a pinned, checksum-verified nFPM
-to build deb/rpm packages. The default module build excludes the CLI; the PowerShell
-module remains a single `StatusLine.dll` targeting .NET 10.
-
-Release builds use full trimming and speed optimization. Select size optimization
-with `-OptimizationPreference Size`; use `-NativeOutputPath` for a separate output directory.
-Native debug symbols are optional and separate from the executable.
-
-### Releases
-
-The manual **Release** workflow defaults to `module-and-cli`. It selects one new
-version, builds and tests the module and every native target, then publishes the
-module and attaches the nupkg, native archives, and SHA256 files to one GitHub
-release. Every build must succeed before publication begins.
-Linux deb/rpm packages are included in both release modes. CI tests package
-installation, non-root rendering, and removal in Ubuntu 24.04, Debian 12, and
-Fedora 43 containers without an installed .NET runtime. The native Linux build
-uses Ubuntu 24.04 and derives its glibc dependency from the produced executable.
-macOS CI installs the pkg on its clean runner, checks the receipt and installed
-CLI, verifies profiles are unchanged, and removes the test installation.
-
-For the initial CLI catch-up, select `cli-only`: with the manifest at `0.2.0`, it
-builds the native packages and attaches them to the existing `v0.2.0` release.
-It does not bump the version, republish the module, move the tag, or overwrite
-existing assets. Subsequent releases can use the default mode to advance both
-together. Merge the source changes into the default branch before releasing.
-
-The separate **Native executable** workflow builds downloadable CI artifacts
-without publishing a release. Native targets are listed in
-[native-targets.json](../.github/native-targets.json).
-
-To include the pinned Contour/Ghostty integration checks on Linux:
-
-```powershell
-pwsh -NoProfile -NonInteractive -File build.ps1 -Task Native -RuntimeIdentifier linux-x64 -VerifyTerminalIntegration
-```
-
-These checks exercise both integration load orders in Bash, Zsh and Fish PTYs.
-They also run in Linux CI. Live terminal UI behavior still needs manual validation.
-When testing in a container, use `--init` so exited workers are reaped.

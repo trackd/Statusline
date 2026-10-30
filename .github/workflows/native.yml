@@ -85,7 +85,6 @@ jobs:
             artifacts/native/${{ matrix.rid }}/*.deb
             artifacts/native/${{ matrix.rid }}/*.rpm
             artifacts/native/${{ matrix.rid }}/*.pkg
-            artifacts/native/${{ matrix.rid }}/*.sha256
           if-no-files-found: error
       - name: Retain failed build diagnostics
         if: failure()
