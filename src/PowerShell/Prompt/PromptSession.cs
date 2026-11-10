@@ -19,8 +19,10 @@ public sealed class PromptSession {
     private long historyId = -1;
     private readonly ContourContext? contourContext;
     private bool commandPending;
-    private bool promptWritten;
+    private bool promptMarked;
+    private bool deferPromptMarks;
     private bool transient;
+    private bool transientMarks;
     private string? transientPrompt;
     private int? drawnRows;
     private volatile StatusLineState snapshot = new();
@@ -145,7 +147,12 @@ public sealed class PromptSession {
         }
 
         if (session.transient) {
-            return session.profile.PromptStart + (session.transientPrompt ?? PromptRenderer.Render(session.layout, new BlockContext(), Terminal.Width, transient: true, includeTransientBlocks: false)) + session.profile.CommandStart;
+            string compact = session.transientPrompt ?? PromptRenderer.Render(session.layout, new BlockContext(), Terminal.Width, transient: true, includeTransientBlocks: false);
+            if (!session.transientMarks) {
+                return compact;
+            }
+            session.promptMarked = true;
+            return session.profile.PromptStart + compact + session.profile.CommandStart;
         }
 
         int? completedCode = null;
@@ -174,6 +181,7 @@ public sealed class PromptSession {
         }
         else if (session.commandPending) {
             completedCode = success ? 0 : 1;
+            state = state with { LastExitCode = completedCode };
         }
 
         session.commandPending = false;
@@ -187,27 +195,34 @@ public sealed class PromptSession {
             session.transientPrompt = PromptRenderer.Render(session.layout, context, Terminal.Width, transient: true);
         }
 
-        string begin = ShellMarkers.Begin(session.profile, completedCode, state.FileSystemPath, session.promptWritten, session.layout.Configuration.TerminalProgress);
-        session.promptWritten = true;
+        // Windows Terminal creates a scrollbar entry at prompt start, even for input that never runs.
+        session.deferPromptMarks = session.layout.Configuration.Transient &&
+            session.Integration == ShellIntegration.Osc133 && session.profile.Terminal == "windowsterminal" &&
+            session.installation?.Properties["ReadLine"]?.Value is ScriptBlock;
+        string begin = ShellMarkers.Begin(session.profile, completedCode, state.FileSystemPath, session.promptMarked,
+            session.layout.Configuration.TerminalProgress, markPrompt: !session.deferPromptMarks);
+        session.promptMarked = !session.deferPromptMarks;
         return (session.contourContext?.Prompt(state.FileSystemPath, completedCode) ?? string.Empty) +
             begin +
-            prompt + session.profile.CommandStart;
+            prompt + (session.deferPromptMarks ? string.Empty : session.profile.CommandStart);
     }
 
     /// <summary>Selects the compact rendering during PSReadLine's InvokePrompt callback.</summary>
     public static void BeginTransient(Runspace runspace) {
         if (Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
             session.transient = true;
+            session.transientMarks = true;
         }
     }
 
-    /// <summary>Redraws accepted input, including blank lines; null means the reader was cancelled.</summary>
+    /// <summary>Redraws accepted input, with shell marks only for nonblank input.</summary>
     public static bool TryBeginTransient(Runspace runspace, string? line) {
         if (line is null || !Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
             return false;
         }
 
         session.transient = true;
+        session.transientMarks = !string.IsNullOrWhiteSpace(line);
         return true;
     }
 
@@ -228,6 +243,36 @@ public sealed class PromptSession {
             (session.drawnRows ?? session.layout.Rows) - 1, continuation);
     }
 
+    /// <summary>Returns the cached PSReadLine callback that finishes a deferred repaint, if supported.</summary>
+    public static Func<bool>? GetDeferredRepaint(Type editorType) => PSReadLineRepaint.Get(editorType)?.Repaint;
+
+    /// <summary>Uses the editor's saved input row when its character widths cannot be inferred.</summary>
+    public static int? GetEditorPromptRow(Runspace runspace, Type editorType, int firstVisibleRow, int endRow) {
+        if (!Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session) ||
+            !session.layout.Configuration.Transient ||
+            PSReadLineRepaint.Get(editorType)?.GetInitialRow() is not int inputRow) {
+            return null;
+        }
+
+        int row = inputRow - ((session.drawnRows ?? session.layout.Rows) - 1);
+        return row >= firstVisibleRow && row < endRow ? row : null;
+    }
+
+    /// <summary>Restores visible accepted input if the editor cannot finish painting it.</summary>
+    public static string GetRepaintRecovery(Runspace runspace, string line, string continuation) {
+        if (!Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
+            return string.Empty;
+        }
+
+        string compact = session.transientPrompt ?? session.layout.TransientSymbol;
+        if (session.transientMarks) {
+            session.promptMarked = true;
+            compact = session.profile.PromptStart + compact + session.profile.CommandStart;
+        }
+        string prefix = "\r\n" + TerminalText.Sanitize(continuation, keepStyles: false);
+        return compact + string.Join(prefix, line.Split('\n').Select(text => TerminalText.Sanitize(text, keepStyles: false))) + "\r\n\e[?25h";
+    }
+
     /// <summary>Marks command execution after ReadLine has accepted a complete line.</summary>
     public static void CommandAccepted(Runspace runspace, string? line) {
         StatusLineActivity.CommandAccepted(runspace.InstanceId, line);
@@ -236,7 +281,9 @@ public sealed class PromptSession {
         }
 
         session.commandPending = true;
-        string sequence = ShellMarkers.Execute(session.profile, line, session.layout.Configuration.TerminalProgress) +
+        string boundary = session.deferPromptMarks && !session.promptMarked
+            ? session.profile.PromptStart + session.profile.CommandStart : string.Empty;
+        string sequence = boundary + ShellMarkers.Execute(session.profile, line, session.layout.Configuration.TerminalProgress) +
             (session.contourContext?.Execute(line, session.snapshot.FileSystemPath) ?? string.Empty);
         if (sequence.Length > 0) {
             WriteOptionalTerminal(sequence);
@@ -271,12 +318,19 @@ public sealed class PromptSession {
         $options = $null
         $oldPromptText = $null
         $emptyPromptText = $null
+        $finishRepaint = $null
+        $editorType = $null
         if (Get-Module PSReadLine) {
             $options = Get-PSReadLineOption
             $oldPromptText = $options.PromptText
             # An explicit empty suffix also prevents first-read automatic inference.
             $emptyPromptText = [string[]]@('')
             $options.PromptText = $emptyPromptText
+            try {
+                $editorType = [Microsoft.PowerShell.PSConsoleReadLine]
+                $finishRepaint = [StatusLine.PromptSession]::GetDeferredRepaint($editorType)
+            }
+            catch { $finishRepaint = $null }
         }
         elseif ($transient) { Write-Warning 'Transient prompt requires PSReadLine to be loaded.' }
         $prompt = {
@@ -297,7 +351,7 @@ public sealed class PromptSession {
                 [StatusLine.StatusLineActivity]::BeginReadLine($runspace.InstanceId)
                 $position = $null
                 $width = 0
-                if ($transient -and $options -and -not $options.ScreenReaderModeEnabled -and -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
+                if ($transient -and $finishRepaint -and -not $options.ScreenReaderModeEnabled -and -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
                     try {
                         $position = [Console]::GetCursorPosition()
                         $width = [Console]::BufferWidth
@@ -319,14 +373,28 @@ public sealed class PromptSession {
                         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$editorLine, [ref]$editorCursor)
                         if ($endPosition.Item1 -eq 0 -and $editorLine -ceq $line -and $editorCursor -eq $line.Length) {
                             $row = [StatusLine.PromptSession]::GetTransientRow($runspace, $line, $position.Item1, $width, $endPosition.Item2, $options.ContinuationPrompt)
-                            if ($null -ne $row) {
-                                [StatusLine.PromptSession]::BeginTransient($runspace)
+                            if ($null -eq $row) {
+                                $row = [StatusLine.PromptSession]::GetEditorPromptRow($runspace, $editorType, [Console]::WindowTop, $endPosition.Item2)
+                            }
+                            if ($null -ne $row -and [StatusLine.PromptSession]::TryBeginTransient($runspace, $line)) {
                                 try {
                                     $rowsUp = $endPosition.Item2 - $row
                                     [Console]::Write("`r`e[${rowsUp}A`e[0J")
-                                    [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt($null, [int]$row)
-                                    # Acceptance already happened. Finish the redraw without accepting again.
-                                    [Console]::Write("`e[0J`r`n")
+                                    $painted = $false
+                                    try {
+                                        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt($null, [int]$row)
+                                        # InvokePrompt may defer rendering when paste keystrokes are queued.
+                                        $painted = $finishRepaint.Invoke()
+                                    }
+                                    catch { }
+                                    if ($painted) {
+                                        [Console]::Write("`e[0J`r`n")
+                                    }
+                                    else {
+                                        [Console]::SetCursorPosition(0, [int]$row)
+                                        $recovery = [StatusLine.PromptSession]::GetRepaintRecovery($runspace, $line, $options.ContinuationPrompt)
+                                        [Console]::Write("`e[0J" + $recovery)
+                                    }
                                 }
                                 finally { [StatusLine.PromptSession]::EndTransient($runspace) }
                             }

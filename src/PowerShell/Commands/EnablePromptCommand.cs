@@ -58,6 +58,23 @@ public sealed class EnablePromptCommand : PSCmdlet {
     public SwitchParameter ConnectRows { get; set; }
 
     [Parameter]
+    [AllowEmptyString]
+    [ValidateNotNull]
+    public string? Symbol { get; set; }
+
+    [Parameter]
+    [AllowEmptyString]
+    [ValidateNotNull]
+    public string? TransientSymbol { get; set; }
+
+    [Parameter]
+    public SwitchParameter ColorSymbolByExitCode { get; set; }
+
+    [Parameter]
+    [AllowEmptyString]
+    public string? DirectorySeparator { get; set; }
+
+    [Parameter]
     [ValidateRange(1, 2)]
     public int Rows { get; set; } = 1;
 
@@ -97,9 +114,6 @@ public sealed class EnablePromptCommand : PSCmdlet {
     public SwitchParameter BlockSeparator { get; set; }
 
     [Parameter]
-    public SwitchParameter DurationWarning { get; set; }
-
-    [Parameter]
     public SwitchParameter ShellContext { get; set; }
 
     [Parameter]
@@ -112,7 +126,10 @@ public sealed class EnablePromptCommand : PSCmdlet {
         (object[] left, object[] right) = ResolveGroups(bound.ContainsKey(nameof(Configuration)));
         PromptConfiguration configuration = Configuration with {
             ConnectRows = bound.ContainsKey(nameof(ConnectRows)) ? ConnectRows.IsPresent : Configuration.ConnectRows,
-            DurationWarning = bound.ContainsKey(nameof(DurationWarning)) ? DurationWarning.IsPresent : Configuration.DurationWarning,
+            Symbol = Symbol ?? Configuration.Symbol,
+            TransientSymbol = TransientSymbol ?? Configuration.TransientSymbol,
+            ColorSymbolByExitCode = bound.ContainsKey(nameof(ColorSymbolByExitCode)) ? ColorSymbolByExitCode.IsPresent : Configuration.ColorSymbolByExitCode,
+            DirectorySeparator = bound.ContainsKey(nameof(DirectorySeparator)) ? DirectorySeparator : Configuration.DirectorySeparator,
             ShellContext = bound.ContainsKey(nameof(ShellContext)) ? ShellContext.IsPresent : Configuration.ShellContext,
             TerminalProgress = bound.ContainsKey(nameof(TerminalProgress)) ? TerminalProgress.IsPresent : Configuration.TerminalProgress,
             Padding = bound.ContainsKey(nameof(Padding)) ? Padding : Configuration.Padding,

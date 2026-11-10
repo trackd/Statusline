@@ -26,8 +26,30 @@ internal sealed class DirectoryBlock : IImmediateBlock {
             }
         }
 
+        if (context.DirectorySeparator is { Length: > 0 } separator) {
+            return new BlockContent(icon, SeparateComponents(text, separator), Metadata.Alignment, Blue, separator);
+        }
+
         return (icon, text, Metadata.Alignment, Blue);
     }
+
+    private static string SeparateComponents(string text, string separator) {
+        var output = new System.Text.StringBuilder(text.Length);
+        for (int index = 0; index < text.Length; index++) {
+            char character = text[index];
+            if (index > 0 && index + 1 < text.Length && IsSeparator(character) &&
+                !IsSeparator(text[index - 1]) && !IsSeparator(text[index + 1])) {
+                output.Append(separator);
+            }
+            else {
+                output.Append(character);
+            }
+        }
+        return output.ToString();
+    }
+
+    private static bool IsSeparator(char character) =>
+        character == Path.DirectorySeparatorChar || character == Path.AltDirectorySeparatorChar;
 
     private static string Home(IconSet set) => Pick(("\uE617", "⌂", ""), set);
 }

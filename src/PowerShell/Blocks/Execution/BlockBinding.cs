@@ -77,7 +77,7 @@ internal sealed class BlockBinding {
             icon = current.Icon ?? icon;
             placement = alignment ?? placement;
             var block = new StatusLineBlock(data.Text, foreground, background, placement, padding,
-                current.Bold ?? false, current.Italic ?? false, current.Underline ?? false, icon) {
+                current.Bold ?? false, current.Italic ?? false, current.Underline ?? false, icon, data.IconSeparator ?? " ") {
                 PreserveForeground = current.Foreground is not null,
                 PreserveBackground = current.Background is not null,
                 UseOrdinaryLeadingSpace = duration,

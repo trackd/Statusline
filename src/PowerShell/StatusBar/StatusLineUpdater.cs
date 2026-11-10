@@ -24,7 +24,7 @@ internal sealed record UpdaterOptions(
     int IdleTimeoutSeconds,
     string? WeatherLocation = null,
     bool BlendBackground = false,
-    TextContrastMode TextContrast = TextContrastMode.Automatic, bool DurationWarning = false);
+    TextContrastMode TextContrast = TextContrastMode.Automatic);
 
 /// <summary>
 /// Renders immutable session snapshots on a dedicated thread. Script and built-in I/O
@@ -291,7 +291,6 @@ internal static class StatusLineUpdater {
             RunspaceId = options.RunspaceId,
             BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,
             WeatherLocation = options.WeatherLocation,
-            DurationWarning = options.DurationWarning,
         };
 
         return BlockEvaluator.Create(options.Selection, context, options.Overrides);

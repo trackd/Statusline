@@ -55,9 +55,8 @@ public sealed class BlockBehaviorTests {
     public void DurationOmitsAbsentValuesButRetainsExplicitZero() {
         var block = (IImmediateBlock)BlockCatalog.Get(StatusLineBlockKind.Duration);
         Assert.Null(block.Evaluate(new BlockContext()));
-        var context = new BlockContext { State = new() { LastDuration = TimeSpan.Zero, LastExitCode = 3 }, DurationWarning = true };
-        Assert.Contains("⚠", block.Evaluate(context)!.Value.Text);
-        Assert.Equal("0ms", block.Evaluate(context with { DurationWarning = false })!.Value.Text);
+        var context = new BlockContext { State = new() { LastDuration = TimeSpan.Zero, LastExitCode = 3 } };
+        Assert.Equal("0ms", block.Evaluate(context)!.Value.Text);
     }
 
     [Fact]

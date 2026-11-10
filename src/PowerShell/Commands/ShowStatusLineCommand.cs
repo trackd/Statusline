@@ -31,7 +31,6 @@ public sealed class ShowStatusLineCommand : PSCmdlet {
             PowerShellVersion = CommandHelpers.GetPowerShellVersion(SessionState),
             IconSet = settings.IconSet,
             BlockTimeoutMilliseconds = settings.BlockTimeoutMilliseconds,
-            DurationWarning = settings.DurationWarning,
             WeatherLocation = settings.WeatherLocation,
             SlowProviderWait = TimeSpan.Zero,
         };

@@ -1,7 +1,7 @@
 namespace StatusLine;
 
 internal static class ShellMarkers {
-    public static string Begin(ShellIntegrationProfile profile, int? exitCode, string? path, bool finish = false, bool terminalProgress = false) {
+    public static string Begin(ShellIntegrationProfile profile, int? exitCode, string? path, bool finish = false, bool terminalProgress = false, bool markPrompt = true) {
         string progress = terminalProgress ? Vt.ClearProgress : string.Empty;
         if (profile.Protocol == ShellIntegration.None) {
             return progress;
@@ -18,7 +18,7 @@ internal static class ShellMarkers {
         }
 
         return finished + progress + (profile.ReflowControl && !profile.IsExternal(ExternalIntegration.Reflow) ? Vt.DisableReflow : string.Empty) +
-            profile.PromptStart + (profile.Protocol == ShellIntegration.Osc633
+            (markPrompt ? profile.PromptStart : string.Empty) + (profile.Protocol == ShellIntegration.Osc633
                 ? Vt.VsCodeWindowsProperty(OperatingSystem.IsWindows()) : string.Empty) + cwd;
     }
 

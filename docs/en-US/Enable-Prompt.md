@@ -26,7 +26,8 @@ Enable-Prompt [-Configuration <PromptConfiguration>] [-Left <Object[]>] [-Right 
  [-IconSet <IconSet>] [-ShellIntegration <ShellIntegration>] [-TerminalProgress] [-Transient]
  [-TransientBlock <Object[]>] [-ConnectRows] [-Rows <int>] [-BlockTimeoutMilliseconds <int>]
  [-StartColor <Color>] [-EndColor <Color>] [-ElevatedColorStart <Color>] [-ElevatedColorEnd <Color>]
- [-WeatherLocation <string>] [-DirectoryDepth <int>] [-BlockSeparator] [-DurationWarning]
+ [-WeatherLocation <string>] [-DirectoryDepth <int>] [-BlockSeparator]
+ [-Symbol <string>] [-TransientSymbol <string>] [-ColorSymbolByExitCode] [-DirectorySeparator <string>]
  [-ShellContext] [-Padding <string>] [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
 
@@ -40,8 +41,8 @@ None.
 
 Installs an explicitly enabled shared-block prompt. Selecting right-hand or input-row blocks forces
 two rows: context above editable input. Otherwise Rows selects one or two rows. Transient
-orchestration wraps PSConsoleHostReadLine and redraws after the original reader returns, including
-blank input. Key bindings and ExtraPromptLineCount remain unchanged. Installation temporarily
+orchestration wraps PSConsoleHostReadLine and redraws after the original reader returns.
+Key bindings and ExtraPromptLineCount remain unchanged. Installation temporarily
 sets PSReadLine PromptText to an empty suffix; disable restores it while still owned.
 Command facts and provider caches are shared with the independently running status-line timer.
 Null and invalid configurations are rejected. Failed configuration does not change shared directory
@@ -122,26 +123,6 @@ DontShow: false
 AcceptedValues: [Automatic, Preserve, Black, White]
 HelpMessage: ''
 ```
-
-### -DurationWarning
-
-Append a red warning icon after Duration when the last invocation failed. Disabled by default.
-Retained errors from earlier commands do not trigger this warning after a successful invocation.
-
-```yaml
-Type: System.Management.Automation.SwitchParameter
-DefaultValue: false
-SupportsWildcards: false
-Aliases: []
-ParameterSets:
-- Name: (All)
-  Position: Named
-  IsRequired: false
-  ValueFromPipeline: false
-  ValueFromPipelineByPropertyName: false
-  ValueFromRemainingArguments: false
-```
-
 
 ### -BlockSeparator
 
@@ -249,6 +230,80 @@ ParameterSets:
   ValueFromRemainingArguments: false
 ```
 
+
+### -Symbol
+
+Text displayed immediately before editable input. Supply an empty string to omit this symbol.
+
+```yaml
+Type: System.String
+DefaultValue: "Configuration.Symbol"
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+```
+
+### -TransientSymbol
+
+Text displayed before accepted input when a prompt is compacted. Supply an empty string to omit this symbol.
+
+```yaml
+Type: System.String
+DefaultValue: "Configuration.TransientSymbol"
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+```
+
+### -ColorSymbolByExitCode
+
+Colors the normal and transient symbols green after success and red after failure. Use
+-ColorSymbolByExitCode:$false to override a configuration that enables this option.
+
+```yaml
+Type: System.Management.Automation.SwitchParameter
+DefaultValue: "Configuration.ColorSymbolByExitCode (false)"
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+```
+
+### -DirectorySeparator
+
+Replaces path separators between displayed directory components. An empty string keeps the
+platform separators.
+
+```yaml
+Type: System.String
+DefaultValue: "Configuration.DirectorySeparator"
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+```
 
 ### -Block
 
@@ -608,11 +663,17 @@ HelpMessage: ''
 
 ### -Transient
 
-Compact accepted input, including blank and whitespace-only lines, after the original reader returns.
+Compact accepted input, including multiline commands and blank lines, after the original reader
+returns. The transient redraw for blank input omits shell integration marks. PSReadLine redraws
+the input with its configured syntax colors.
+In Windows Terminal, transient mode defers scrollbar marks until nonblank input is accepted.
+If the original input row is unavailable, the mark starts at the output boundary and the
+terminal cannot select the input from that mark.
 Acceptance occurs once; custom Enter and validation handlers remain installed. Prompt installation
 temporarily changes PSReadLine PromptText as described above. Requires a PSReadLine-backed original
-reader. Redirection, screen-reader mode, resizing, an off-screen prompt origin, and input with
-uncertain character widths retain the full prompt.
+reader. Redirection, screen-reader mode, resizing, an off-screen prompt origin, and unavailable
+PSReadLine repaint internals retain the full prompt. If the editor cannot finish a redraw after
+the original prompt has been cleared, the accepted input is restored as plain text.
 
 ```yaml
 Type: System.Management.Automation.SwitchParameter

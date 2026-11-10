@@ -66,11 +66,15 @@ Describe 'Prompt rendering and lifecycle' -Tag Contract {
         finally { Disable-Prompt; $function:global:prompt = $previousPrompt }
     }
 
-    It 'redraws blank accepted input transiently' -ForEach @('','   ') {
+    It 'compacts blank accepted input without shell integration marks' -ForEach @('','   ') {
         $previousPrompt = $function:global:prompt
         try {
-            Enable-Prompt -Configuration ((New-TestPromptConfiguration @{ ContextSymbol = ''; InputLinePrefix = '';  TransientSymbol = 'compact> '; Left = @(); Right = @(); Transient = $false })) -ShellIntegration None
-            [StatusLine.PromptSession]::TryBeginTransient([runspace]::DefaultRunspace, $_) | Should -BeTrue
+            Enable-Prompt -Configuration (New-TestPromptConfiguration @{
+                Symbol = 'full> '; TransientSymbol = 'compact> '; Left = @(); Right = @(); Transient = $true
+            }) -ShellIntegration Osc133
+            $runspace = [runspace]::DefaultRunspace
+            [StatusLine.PromptSession]::GetTransientRow($runspace, $_, 6, 80, 10, '>> ') | Should -Be 9
+            [StatusLine.PromptSession]::TryBeginTransient($runspace, $_) | Should -BeTrue
             ((& prompt) -replace '\x1b\[[0-9;]*m') | Should -BeExactly 'compact> '
         }
         finally {

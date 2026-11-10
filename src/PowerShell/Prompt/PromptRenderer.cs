@@ -9,11 +9,12 @@ internal static class PromptRenderer {
     public static string Render(PromptLayout layout, BlockContext context, int width, bool transient, bool includeTransientBlocks = true) {
         PromptConfiguration configuration = layout.Configuration;
         if (context.BlockTimeoutMilliseconds != configuration.BlockTimeoutMilliseconds ||
-            context.DurationWarning != configuration.DurationWarning || context.WeatherLocation != configuration.WeatherLocation) {
+            context.WeatherLocation != configuration.WeatherLocation ||
+            context.DirectorySeparator != configuration.DirectorySeparator) {
             context = context with {
                 BlockTimeoutMilliseconds = configuration.BlockTimeoutMilliseconds,
-                DurationWarning = configuration.DurationWarning,
-                WeatherLocation = configuration.WeatherLocation
+                WeatherLocation = configuration.WeatherLocation,
+                DirectorySeparator = configuration.DirectorySeparator
             };
         }
 
@@ -30,7 +31,7 @@ internal static class PromptRenderer {
                     configuration.Style, textContrast: configuration.TextContrast, roundOuterEdges: true);
             }
 
-            return sequence + Vt.Sgr(layout.TransientAccent, System.Drawing.Color.Empty) + symbol + Vt.Reset;
+            return sequence + Vt.Sgr(SymbolColor(layout, context), System.Drawing.Color.Empty) + symbol + Vt.Reset;
         }
 
         var blocks = new List<StatusLineBlock>(layout.Left.Length + layout.Right.Length + configuration.Block.Length);
@@ -50,7 +51,7 @@ internal static class PromptRenderer {
             string contextRow = StatusLineRenderer.RenderBlocks(colored, available - TerminalText.Measure(prefix), configuration.BlockSeparator, configuration.Style, useCursorPositioning: false, textContrast: configuration.TextContrast, roundOuterEdges: true);
             StringBuilder output = StringBuilderCache.Rent();
             try {
-                AppendAccent(output, layout, prefix);
+                AppendAccent(output, layout.TransientAccent, prefix);
                 output.Append(contextRow).Append(Vt.Reset).Append('\n').Append(input);
                 return output.ToString();
             }
@@ -82,17 +83,24 @@ internal static class PromptRenderer {
         prefix = TerminalText.Clip(prefix, Math.Max(0, available - TerminalText.Measure(symbol))).Sequence;
         StringBuilder output = StringBuilderCache.Rent();
         try {
+            TerminalColor symbolColor = SymbolColor(layout, context);
             if (blocks is null || blocks.Count == 0) {
-                AppendAccent(output, layout, prefix, symbol);
+                if (symbolColor == layout.TransientAccent) {
+                    AppendAccent(output, symbolColor, prefix, symbol);
+                }
+                else {
+                    AppendAccent(output, layout.TransientAccent, prefix);
+                    AppendAccent(output, symbolColor, symbol);
+                }
             }
             else {
                 int blockWidth = Math.Max(0, available - TerminalText.Measure(prefix) - TerminalText.Measure(symbol));
                 IReadOnlyList<StatusLineBlock> colored = layout.InputGradient.Apply(blocks);
                 (string sequence, _) = StatusLineRenderer.RenderGroup(colored, StatusLineAlignment.Left, blockWidth,
                     configuration.BlockSeparator, configuration.Style, textContrast: configuration.TextContrast, roundOuterEdges: true);
-                AppendAccent(output, layout, prefix);
+                AppendAccent(output, layout.TransientAccent, prefix);
                 output.Append(sequence);
-                AppendAccent(output, layout, symbol);
+                AppendAccent(output, symbolColor, symbol);
             }
 
             return output.ToString();
@@ -102,9 +110,14 @@ internal static class PromptRenderer {
         }
     }
 
-    private static void AppendAccent(StringBuilder output, PromptLayout layout, string text, string suffix = "") {
+    private static TerminalColor SymbolColor(PromptLayout layout, BlockContext context) =>
+        layout.Configuration.ColorSymbolByExitCode && context.State.LastExitCode is int code
+            ? (TerminalColor)(code == 0 ? ConsoleColor.Green : ConsoleColor.Red)
+            : layout.TransientAccent;
+
+    private static void AppendAccent(StringBuilder output, TerminalColor color, string text, string suffix = "") {
         if (text.Length > 0 || suffix.Length > 0) {
-            Vt.AppendSgr(output, layout.TransientAccent, System.Drawing.Color.Empty);
+            Vt.AppendSgr(output, color, System.Drawing.Color.Empty);
             output.Append(text).Append(suffix).Append(Vt.Reset);
         }
     }

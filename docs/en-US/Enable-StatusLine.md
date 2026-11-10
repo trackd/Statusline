@@ -24,7 +24,7 @@ Refreshes the status line on a configurable interval with automatic idle pausing
 Enable-StatusLine [[-Block] <Object[]>] [-Left <Object[]>] [-Center <Object[]>] [-Right <Object[]>]
  [-StartColor <Color>] [-EndColor <Color>] [-IntervalMilliseconds <int>] [-IdleTimeoutSeconds <int>]
  [-BlockTimeoutMilliseconds <int>] [-UpdateDuringCommand] [-TextContrast <TextContrastMode>]
- [-Style <SegmentStyle>] [-IconSet <IconSet>] [-BlockSeparator] [-DurationWarning] [-Padding <string>]
+ [-Style <SegmentStyle>] [-IconSet <IconSet>] [-BlockSeparator] [-Padding <string>]
  [-Force] [-Target <StatusLineTarget>] [-OutputPath <string>] [-WeatherLocation <string>]
  [-BlendBackground] [-DirectoryDepth <int>] [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
@@ -206,26 +206,6 @@ DontShow: false
 AcceptedValues: [Automatic, Preserve, Black, White]
 HelpMessage: ''
 ```
-
-### -DurationWarning
-
-Append a red warning icon after Duration when the last invocation failed. Disabled by default.
-Retained errors from earlier commands do not trigger this warning after a successful invocation.
-
-```yaml
-Type: System.Management.Automation.SwitchParameter
-DefaultValue: false
-SupportsWildcards: false
-Aliases: []
-ParameterSets:
-- Name: (All)
-  Position: Named
-  IsRequired: false
-  ValueFromPipeline: false
-  ValueFromPipelineByPropertyName: false
-  ValueFromRemainingArguments: false
-```
-
 
 ### -Padding
 

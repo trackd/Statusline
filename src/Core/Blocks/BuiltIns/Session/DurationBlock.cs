@@ -4,7 +4,7 @@ using static StatusLine.Blocks.Execution.BlockFormatting;
 namespace StatusLine.Blocks.BuiltIns.Session;
 
 internal sealed class DurationBlock : IImmediateBlock {
-    public BlockMetadata Metadata { get; } = new(StatusLineBlockKind.Duration, StatusLineAlignment.Right, ("\u23F1", "⧗", "took"), OrdinaryLeadingSpace: true, Facts: SessionFacts.ExitCode);
+    public BlockMetadata Metadata { get; } = new(StatusLineBlockKind.Duration, StatusLineAlignment.Right, ("\u23F1", "⧗", "took"), OrdinaryLeadingSpace: true);
 
     public BlockContent? Evaluate(BlockContext context) {
         string icon = Metadata.Icon(context.IconSet);
@@ -12,11 +12,6 @@ internal sealed class DurationBlock : IImmediateBlock {
             return null;
         }
 
-        string text = FormatDuration(duration);
-        if (context.DurationWarning && context.State.LastExitCode is { } code && code != 0) {
-            text += " " + Vt.RedForeground + "⚠" + Vt.DefaultForeground;
-        }
-
-        return (icon, text, Metadata.Alignment, Yellow);
+        return (icon, FormatDuration(duration), Metadata.Alignment, Yellow);
     }
 }

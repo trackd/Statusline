@@ -66,9 +66,6 @@ public sealed class EnableStatusLineCommand : PSCmdlet {
     public SwitchParameter BlockSeparator { get; set; }
 
     [Parameter]
-    public SwitchParameter DurationWarning { get; set; }
-
-    [Parameter]
     [AllowEmptyString]
     [ValidateNotNull]
     public string Padding { get; set; } = " ";
@@ -142,7 +139,7 @@ public sealed class EnableStatusLineCommand : PSCmdlet {
             Target,
             outputPath,
             System.Management.Automation.Runspaces.Runspace.DefaultRunspace.InstanceId,
-            StartColor, EndColor, BlockTimeoutMilliseconds, UpdateDuringCommand.IsPresent, IdleTimeoutSeconds, WeatherLocation, BlendBackground.IsPresent, TextContrast, DurationWarning.IsPresent);
+            StartColor, EndColor, BlockTimeoutMilliseconds, UpdateDuringCommand.IsPresent, IdleTimeoutSeconds, WeatherLocation, BlendBackground.IsPresent, TextContrast);
         int previousDepth = DirectoryDisplay.MaximumComponents;
         bool started = false;
         try {

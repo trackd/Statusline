@@ -126,6 +126,7 @@ Describe 'Terminal command boundaries and ownership' -Tag Lifecycle {
     }
 
     It 'commits queued interactive status frames on the foreground idle action' {
+        Import-Module PSReadLine
         $writer = [IO.StringWriter]::new()
         $original = [Console]::Out
         try {

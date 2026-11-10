@@ -14,8 +14,8 @@ internal sealed partial record BlockContext {
     public TimeSpan SlowProviderWait { get; init; }
 
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
-    public bool DurationWarning { get; init; }
     public string? WeatherLocation { get; init; }
+    public string? DirectorySeparator { get; init; }
 }
 
 /// <summary>Caller-supplied replacements for each kind's default layout and colors.</summary>

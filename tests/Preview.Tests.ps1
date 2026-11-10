@@ -3,6 +3,55 @@ BeforeAll {
 }
 
 Describe 'Preview commands' -Tag Contract {
+    It 'separates displayed directory components with <Label>' -ForEach @(
+        @{ Label = 'icons disabled'; IconSet = 'None'; OverrideIcon = $null; Prefix = '' }
+        @{ Label = 'the default icon'; IconSet = 'NerdFont'; OverrideIcon = $null; Prefix = "`u{F07C} › " }
+        @{ Label = 'a custom icon'; IconSet = 'NerdFont'; OverrideIcon = 'CUSTOM'; Prefix = 'CUSTOM › ' }
+        @{ Label = 'an explicitly empty icon'; IconSet = 'NerdFont'; OverrideIcon = ''; Prefix = '' }
+    ) {
+        $directory = Join-Path $TestDrive 'parent/child'
+        $null = New-Item -ItemType Directory -Path $directory -Force
+        $previousStyle = [StatusLine.DirectoryDisplay]::Style
+        $previousBase = [StatusLine.DirectoryDisplay]::BasePath
+        $definition = $null
+        Push-Location -LiteralPath $directory
+        try {
+            [StatusLine.DirectoryDisplay]::Style = 'Relative'
+            [StatusLine.DirectoryDisplay]::BasePath = $TestDrive
+            $selection = 'Directory'
+            if ($null -ne $OverrideIcon) {
+                $definition = New-StatusLineBlock -Kind Directory -Icon $OverrideIcon
+                $selection = $definition
+            }
+            $configuration = New-TestPromptConfiguration @{
+                Left = @($selection); Right = @(); Style = 'Plain'
+                IconSet = $IconSet; DirectorySeparator = ' › '; Padding = ''; Symbol = ''
+            }
+            $sequence = Show-Prompt -Configuration $configuration -Width 160
+            ($sequence -replace '\x1b\[[0-9;]*m') | Should -BeExactly "${Prefix}parent › child"
+        }
+        finally {
+            [StatusLine.DirectoryDisplay]::Style = $previousStyle
+            [StatusLine.DirectoryDisplay]::BasePath = $previousBase
+            if ($definition) { $definition.Dispose() }
+            Pop-Location
+        }
+    }
+
+    It 'colors the prompt symbol for exit code <Code>' -ForEach @(
+        @{ Code = 0; Color = 92 }
+        @{ Code = 1; Color = 91 }
+    ) {
+        $configuration = New-TestPromptConfiguration @{
+            Left = @(); Right = @(); Rows = 2; ConnectRows = $true
+            InputLinePrefix = 'corner '; Symbol = '>> '; TransientSymbol = '>> '
+            ColorSymbolByExitCode = $true
+        }
+        $expected = [regex]::Escape("${escape}[0;${Color};49m>> ${escape}[0m")
+        Show-Prompt -Configuration $configuration -ExitCode $Code | Should -Match $expected
+        Show-Prompt -Configuration $configuration -ExitCode $Code -Transient | Should -Match $expected
+    }
+
     It 'renders a prompt without replacing installed functions or starting a statusline' {
         $previousPrompt = $function:global:prompt
         $previousReader = $function:global:PSConsoleHostReadLine

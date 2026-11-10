@@ -1,8 +1,47 @@
 BeforeAll {
     . "$PSScriptRoot/TestHelpers.ps1"
+    Import-Module PSReadLine
 }
 
 Describe 'Terminal-specific command boundaries' -Tag Lifecycle {
+    It 'keeps live Windows Terminal marks when no acceptance hook can be installed' {
+        $env:TERM_PROGRAM = 'WindowsTerminal'
+        $previousReader = $function:global:PSConsoleHostReadLine
+        try {
+            Remove-Module PSReadLine
+            $function:global:PSConsoleHostReadLine = $null
+            Enable-Prompt -Left @() -Right @() -Transient -ShellIntegration Osc133
+            $rendered = & prompt
+            $rendered | Should -Match '\x1b\]133;A'
+            $rendered | Should -Match '\x1b\]133;B'
+        }
+        finally {
+            Disable-Prompt
+            Import-Module PSReadLine
+            $function:global:PSConsoleHostReadLine = $previousReader
+        }
+    }
+
+    It 'uses the completion code for symbol color when history has no new entry' {
+        Enable-Prompt -Left @() -Right @() -Symbol '>> ' -ColorSymbolByExitCode -ShellIntegration None
+        $runspace = [runspace]::DefaultRunspace
+        $location = $ExecutionContext.SessionState.Path.CurrentLocation
+        [StatusLine.PromptSession]::CommandAccepted($runspace, 'Write-Error failed')
+        $rendered = [StatusLine.PromptSession]::Render($runspace, $false, $null, $location, $null, 0)
+        $rendered | Should -Match '\x1b\[0;91;49m>> '
+    }
+
+    It 'restores multiline accepted input without replaying control sequences after a repaint failure' {
+        Enable-Prompt -Left @() -Right @() -Transient -TransientSymbol 'tiny> ' -ShellIntegration None
+        $runspace = [runspace]::DefaultRunspace
+        $line = "if (`$true) {`n    Write-Output 'Malmö'`e[2J`n}"
+        [StatusLine.PromptSession]::TryBeginTransient($runspace, $line) | Should -BeTrue
+        try {
+            $recovery = [StatusLine.PromptSession]::GetRepaintRecovery($runspace, $line, '>> ')
+            $recovery | Should -BeExactly "tiny> if (`$true) {`r`n>>     Write-Output 'Malmö' `r`n>> }`r`n`e[?25h"
+        }
+        finally { [StatusLine.PromptSession]::EndTransient($runspace) }
+    }
     It 'reports optional terminal progress outside command output (<Protocol>, <Enabled>)' -ForEach @(
         @{ Protocol = 'Osc133'; Enabled = $true; Number = 133 }
         @{ Protocol = 'Osc633'; Enabled = $true; Number = 633 }
@@ -83,10 +122,8 @@ Describe 'Terminal-specific command boundaries' -Tag Lifecycle {
         try {
             [Console]::SetOut($writer)
             $normal = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
-            $normal | Should -Match '^\x1b\]133;A'
+            $normal | Should -Not -Match '\x1b\]133;'
             $normal | Should -Match '\x1b\]9;9;'
-            $normal | Should -Not -Match '\x1b\]133;D'
-            $normal.LastIndexOf("$escape]133;B") | Should -BeGreaterThan $normal.LastIndexOf([char]10)
             [StatusLine.PromptSession]::BeginTransient($runspace)
             $compact = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
             [StatusLine.PromptSession]::EndTransient($runspace)
@@ -101,7 +138,8 @@ Describe 'Terminal-specific command boundaries' -Tag Lifecycle {
             $finished = [StatusLine.PromptSession]::Render($runspace, $false, 7, $location, $null, 0)
             $writer.Write($finished)
             $transcript = $writer.ToString()
-            $transcript | Should -Match '(?s)\x1b\]133;A.*tiny> .*\x1b\]133;B\x07Write-Output RESULT\r?\n\x1b\]133;C\x07RESULT\r?\n\x1b\]133;D;1\x07\x1b\]133;A'
+            $transcript | Should -Match '(?s)\x1b\]133;A.*tiny> .*\x1b\]133;B\x07Write-Output RESULT\r?\n\x1b\]133;C\x07RESULT\r?\n\x1b\]133;D;1\x07'
+            $finished | Should -Not -Match '\x1b\]133;[AB]'
             $diagnostics = [StatusLine.TerminalControl]::GetShellIntegration().Enabled
             $diagnostics.CommandStart | Should -Be 'OSC 133;B'
             $diagnostics.OutputStart | Should -Be 'OSC 133;C'
@@ -115,7 +153,7 @@ Describe 'Terminal-specific command boundaries' -Tag Lifecycle {
         }
     }
 
-    It 'closes blank acceptance without assigning a false success or failure code' {
+    It 'emits no Windows Terminal scrollbar marks for blank input and marks a command without a redraw' {
         $env:TERM_PROGRAM = 'WindowsTerminal'
         $configuration = New-TestPromptConfiguration @{
             Left = @(); Right = @(); Input = @()
@@ -125,11 +163,27 @@ Describe 'Terminal-specific command boundaries' -Tag Lifecycle {
         Enable-Prompt -Configuration $configuration
         $runspace = [runspace]::DefaultRunspace
         $location = $ExecutionContext.SessionState.Path.CurrentLocation
-        $null = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
-        [StatusLine.PromptSession]::CommandAccepted($runspace, '')
-        $next = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
-        $next | Should -Match '^\x1b\]133;D\x07\x1b\]133;A'
-        $next | Should -Not -Match '\x1b\]133;D;'
+        $originalOutput = [Console]::Out
+        $writer = [IO.StringWriter]::new()
+        try {
+            [Console]::SetOut($writer)
+            $live = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
+            [StatusLine.PromptSession]::TryBeginTransient($runspace, '') | Should -BeTrue
+            $compact = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
+            [StatusLine.PromptSession]::EndTransient($runspace)
+            [StatusLine.PromptSession]::CommandAccepted($runspace, '')
+            $next = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
+            ($live + $compact + $writer.ToString() + $next) | Should -Not -Match '\x1b\]133;'
+
+            [StatusLine.PromptSession]::CommandAccepted($runspace, 'Write-Output RESULT')
+            $writer.ToString() | Should -BeExactly "`e]133;A`a`e]133;B`a`e]133;C`a"
+            $finished = [StatusLine.PromptSession]::Render($runspace, $true, 0, $location, $null, 0)
+            $finished | Should -Match '^\x1b\]133;D;0\x07'
+        }
+        finally {
+            [Console]::SetOut($originalOutput)
+            $writer.Dispose()
+        }
     }
 
     It 'keeps terminal extensions distinct for <TerminalName>' -ForEach @(

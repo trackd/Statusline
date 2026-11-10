@@ -39,12 +39,18 @@ internal interface IRefreshingBlock : IBuiltInBlock {
 
 internal readonly record struct CollectionScope(string Path, string Environment);
 
-// Acquisition occurs once. Icon-specific text is materialized only when requested and retained
-// with the sample, so presentation changes never start a new process or read system metrics.
-internal sealed class CollectedBlock(Func<IconSet, BlockContent?> present) {
+// Icon-specific text is materialized only when requested and retained with the sample.
+// Optional decoration can read a separate refresh cache without invalidating the sample.
+internal sealed class CollectedBlock(Func<IconSet, BlockContent?> present,
+    Func<BlockContext, BlockContent, BlockContent>? decorate = null) {
     private readonly Lock gate = new();
     private readonly BlockContent?[] variants = new BlockContent?[3];
     private int initialized;
+
+    public BlockContent? Present(BlockContext context) {
+        BlockContent? content = Present(context.IconSet);
+        return decorate is not null && content is { } block ? decorate(context, block) : content;
+    }
 
     public BlockContent? Present(IconSet icons) {
         int index = (int)icons;

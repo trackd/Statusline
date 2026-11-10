@@ -17,7 +17,6 @@ public sealed record StatusBarConfiguration {
     public SegmentStyle Style { get; init; } = SegmentStyle.Powerline;
     public IconSet IconSet { get; init; } = IconSet.NerdFont;
     public TextContrastMode TextContrast { get; init; } = TextContrastMode.Automatic;
-    public bool DurationWarning { get; init; }
     public string? WeatherLocation { get; init; }
     public int IntervalMilliseconds { get; init; } = 1000;
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
@@ -50,7 +49,6 @@ public sealed record StatusBarConfiguration {
             TextContrast = TextContrast,
             BlockSeparator = BlockSeparator,
             BlendBackground = BlendBackground,
-            DurationWarning = DurationWarning,
             WeatherLocation = WeatherLocation,
             Interval = TimeSpan.FromMilliseconds(IntervalMilliseconds),
             BlockTimeoutMilliseconds = BlockTimeoutMilliseconds,
@@ -109,7 +107,6 @@ public sealed record StatusBarConfiguration {
             Style = options.Style,
             IconSet = options.IconSet,
             TextContrast = options.TextContrast,
-            DurationWarning = options.DurationWarning,
             WeatherLocation = options.WeatherLocation,
             IntervalMilliseconds = (int)options.Interval.TotalMilliseconds,
             BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,
