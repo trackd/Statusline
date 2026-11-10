@@ -27,12 +27,7 @@ internal sealed class DirectoryBlock : IImmediateBlock {
         }
 
         if (context.DirectorySeparator is { Length: > 0 } separator) {
-            text = SeparateComponents(text, separator);
-            if (icon.Length > 0 && text.Length > 0) {
-                // The default block composition inserts a space between icon and text.
-                // Compose this breadcrumb here so the configured separator supplies the spacing.
-                return (string.Empty, icon + separator + text, Metadata.Alignment, Blue);
-            }
+            return new BlockContent(icon, SeparateComponents(text, separator), Metadata.Alignment, Blue, separator);
         }
 
         return (icon, text, Metadata.Alignment, Blue);

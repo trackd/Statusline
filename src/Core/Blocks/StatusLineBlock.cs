@@ -18,7 +18,14 @@ public sealed class StatusLineBlock {
         bool bold = false,
         bool italic = false,
         bool underline = false,
-        string icon = "") {
+        string icon = "")
+        : this(text, foreground, background, alignment, padding, bold, italic, underline, icon, " ") {
+    }
+
+    private readonly string iconSeparator;
+
+    internal StatusLineBlock(string text, TerminalColor foreground, TerminalColor background,
+        StatusLineAlignment alignment, string padding, bool bold, bool italic, bool underline, string icon, string iconSeparator) {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(icon);
 
@@ -38,15 +45,16 @@ public sealed class StatusLineBlock {
         Italic = italic;
         Underline = underline;
         Icon = icon;
+        this.iconSeparator = iconSeparator;
 
         if (Icon.Length == 0 || Text.Length == 0) {
             Content = TerminalText.Sanitize(Icon.Length == 0 ? Text : Icon, keepStyles: true);
         }
         else {
-            StringBuilder builder = StringBuilderCache.Rent(Icon.Length + Text.Length + 1);
+            StringBuilder builder = StringBuilderCache.Rent(Icon.Length + Text.Length + iconSeparator.Length);
             try {
                 TerminalText.AppendSanitized(builder, Icon, keepStyles: true);
-                builder.Append(' ');
+                TerminalText.AppendSanitized(builder, iconSeparator, keepStyles: false);
                 TerminalText.AppendSanitized(builder, Text, keepStyles: true);
                 Content = builder.ToString();
             }
@@ -114,7 +122,7 @@ public sealed class StatusLineBlock {
     public string? LastError { get; private init; }
 
     internal StatusLineBlock AsStale(string? error) => IsStale ? this : new StatusLineBlock(
-        Text + " [stale]", Color.Goldenrod, Background, Alignment, Padding, Bold, Italic, Underline, Icon) {
+        Text + " [stale]", Color.Goldenrod, Background, Alignment, Padding, Bold, Italic, Underline, Icon, iconSeparator) {
         PreserveForeground = PreserveForeground,
         PreserveBackground = PreserveBackground,
         UseOrdinaryLeadingSpace = UseOrdinaryLeadingSpace,
@@ -135,7 +143,7 @@ public sealed class StatusLineBlock {
             return this;
         }
 
-        var block = new StatusLineBlock(text, Foreground, Background, Alignment, Padding, Bold, Italic, Underline, Icon) {
+        var block = new StatusLineBlock(text, Foreground, Background, Alignment, Padding, Bold, Italic, Underline, Icon, iconSeparator) {
             PreserveForeground = PreserveForeground,
             PreserveBackground = PreserveBackground,
             UseOrdinaryLeadingSpace = UseOrdinaryLeadingSpace,
@@ -151,6 +159,7 @@ public sealed class StatusLineBlock {
         TerminalColor background, string padding, bool bold, bool italic, bool underline) {
         Text = source.Text;
         Icon = source.Icon;
+        iconSeparator = source.iconSeparator;
         Content = source.Content;
         unicodeMeasurement = TextMeasurement.UseUnicode;
         bool sameMeasurement = unicodeMeasurement == source.unicodeMeasurement;

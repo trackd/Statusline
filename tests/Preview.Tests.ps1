@@ -3,31 +3,37 @@ BeforeAll {
 }
 
 Describe 'Preview commands' -Tag Contract {
-    It 'separates displayed directory components when configured' {
+    It 'separates displayed directory components with <Label>' -ForEach @(
+        @{ Label = 'icons disabled'; IconSet = 'None'; OverrideIcon = $null; Prefix = '' }
+        @{ Label = 'the default icon'; IconSet = 'NerdFont'; OverrideIcon = $null; Prefix = "`u{F07C} › " }
+        @{ Label = 'a custom icon'; IconSet = 'NerdFont'; OverrideIcon = 'CUSTOM'; Prefix = 'CUSTOM › ' }
+        @{ Label = 'an explicitly empty icon'; IconSet = 'NerdFont'; OverrideIcon = ''; Prefix = '' }
+    ) {
         $directory = Join-Path $TestDrive 'parent/child'
         $null = New-Item -ItemType Directory -Path $directory -Force
         $previousStyle = [StatusLine.DirectoryDisplay]::Style
         $previousBase = [StatusLine.DirectoryDisplay]::BasePath
+        $definition = $null
         Push-Location -LiteralPath $directory
         try {
             [StatusLine.DirectoryDisplay]::Style = 'Relative'
             [StatusLine.DirectoryDisplay]::BasePath = $TestDrive
+            $selection = 'Directory'
+            if ($null -ne $OverrideIcon) {
+                $definition = New-StatusLineBlock -Kind Directory -Icon $OverrideIcon
+                $selection = $definition
+            }
             $configuration = New-TestPromptConfiguration @{
-                Left = @('Directory'); Right = @(); Style = 'Plain'
-                IconSet = 'None'; DirectorySeparator = ' › '
+                Left = @($selection); Right = @(); Style = 'Plain'
+                IconSet = $IconSet; DirectorySeparator = ' › '; Padding = ''; Symbol = ''
             }
             $sequence = Show-Prompt -Configuration $configuration -Width 160
-            ($sequence -replace '\x1b\[[0-9;]*m') | Should -Match '^ *parent › child'
-            $configuration = New-TestPromptConfiguration @{
-                Left = @('Directory'); Right = @(); Style = 'Plain'
-                IconSet = 'NerdFont'; DirectorySeparator = ' › '
-            }
-            $sequence = Show-Prompt -Configuration $configuration -Width 160
-            ($sequence -replace '\x1b\[[0-9;]*m') | Should -Match '^ *\uF07C › parent › child'
+            ($sequence -replace '\x1b\[[0-9;]*m') | Should -BeExactly "${Prefix}parent › child"
         }
         finally {
             [StatusLine.DirectoryDisplay]::Style = $previousStyle
             [StatusLine.DirectoryDisplay]::BasePath = $previousBase
+            if ($definition) { $definition.Dispose() }
             Pop-Location
         }
     }
