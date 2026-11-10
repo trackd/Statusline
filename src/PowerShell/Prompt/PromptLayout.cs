@@ -45,7 +45,11 @@ internal sealed class PromptLayout {
             throw new ArgumentException("Prompt configuration contains an undefined style, icon set, or protocol.", nameof(configuration));
         }
 
-        Configuration = configuration.Copy();
+        Configuration = configuration.Copy() with {
+            DirectorySeparator = configuration.DirectorySeparator is { } separator
+                ? TerminalText.Sanitize(separator, keepStyles: false)
+                : null
+        };
         Symbol = TerminalText.Sanitize(Configuration.Symbol, keepStyles: false);
         TransientSymbol = TerminalText.Sanitize(Configuration.TransientSymbol, keepStyles: false);
         ContextSymbol = TerminalText.Sanitize(Configuration.ContextSymbol, keepStyles: false);

@@ -59,23 +59,39 @@ public static class DirectoryDisplay {
     } = 40;
     internal static void Initialize(string path) => Interlocked.CompareExchange(ref startupDirectory, path, null);
 
-    public static string Format(string path) {
+    public static string Format(string path) => Format(path, Style);
+
+    /// <summary>Formats a directory path with per-call overrides for the display preferences.</summary>
+    /// <param name="path">The directory path. Paths that are not fully qualified are returned as supplied.</param>
+    /// <param name="style">The display style to use.</param>
+    /// <param name="maximumCharacters">The Compact width limit (4 to 4096). Null uses MaximumCharacters.</param>
+    /// <param name="maximumComponents">The Relative component limit. Zero disables shortening. Null uses MaximumComponents.</param>
+    public static string Format(string path, DirectoryDisplayStyle style, int? maximumCharacters = null, int? maximumComponents = null) {
         ArgumentNullException.ThrowIfNull(path);
+        if (maximumCharacters is int characters) {
+            ArgumentOutOfRangeException.ThrowIfLessThan(characters, 4, nameof(maximumCharacters));
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(characters, 4096, nameof(maximumCharacters));
+        }
+
+        if (maximumComponents is int components) {
+            ArgumentOutOfRangeException.ThrowIfNegative(components, nameof(maximumComponents));
+        }
+
         if (!Path.IsPathFullyQualified(path)) {
             return path;
         }
 
-        return Style switch {
-            DirectoryDisplayStyle.Relative => Relative(path),
+        return style switch {
+            DirectoryDisplayStyle.Relative => Relative(path, maximumComponents ?? MaximumComponents),
             DirectoryDisplayStyle.Home => HomeRelative(path),
             DirectoryDisplayStyle.Leaf => Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) is { Length: > 0 } leaf ? leaf : path,
-            DirectoryDisplayStyle.Compact => Compact(path),
+            DirectoryDisplayStyle.Compact => Compact(path, maximumCharacters ?? MaximumCharacters),
             DirectoryDisplayStyle.Short => Short(path),
             _ => path,
         };
     }
 
-    private static string Relative(string path) {
+    private static string Relative(string path, int maximum) {
         string relative = Path.GetRelativePath(BasePath ?? StartupDirectory, path);
         if (relative == ".") {
             return Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) is { Length: > 0 } leaf ? leaf : path;
@@ -85,7 +101,6 @@ public static class DirectoryDisplay {
             return relative;
         }
 
-        int maximum = MaximumComponents;
         if (maximum == 0) {
             return relative;
         }
@@ -118,12 +133,12 @@ public static class DirectoryDisplay {
         return "~" + Path.DirectorySeparatorChar + relative;
     }
 
-    private static string Compact(string path) {
+    private static string Compact(string path, int maximum) {
         if (!OperatingSystem.IsWindows()) {
-            return TerminalText.Clip(path, MaximumCharacters).Sequence;
+            return TerminalText.Clip(path, maximum).Sequence;
         }
 
-        char[] buffer = new char[MaximumCharacters + 1];
+        char[] buffer = new char[maximum + 1];
         return NativeMethods.PathCompactPathEx(buffer, path, (uint)buffer.Length, 0) ? new string(buffer, 0, Array.IndexOf(buffer, '\0')) : path;
     }
 

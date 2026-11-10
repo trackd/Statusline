@@ -82,7 +82,7 @@ Describe 'Prompt spacing' -Tag Rendering {
         $configuration = New-TestPromptConfiguration @{
             Left = @('Duration'); Right = @(); Block = @(); Input = @()
             Style = 'Powerline'; BlockSeparator = $false; Padding = [string][char]0x2009
-            IconSet = 'None'; DurationWarning = $false; Rows = 1; Symbol = '> '; Transient = $false; ShellIntegration = 'None'
+            IconSet = 'None'; Rows = 1; Symbol = '> '; Transient = $false; ShellIntegration = 'None'
         }
         $sequence = Get-TestPrompt -Configuration $configuration -Duration ([timespan]::FromMilliseconds(9)) -ExitCode 0 -Width 30
         ($sequence -replace '\x1b\[[0-9;]*m') | Should -BeExactly " took 9ms$([char]0x2009)> "

@@ -23,7 +23,6 @@ public sealed record BlockSnapshotOptions {
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
     public int? ExitCode { get; init; }
     public TimeSpan? Duration { get; init; }
-    public bool DurationWarning { get; init; }
     public StatusLineState? State { get; init; }
 }
 
@@ -74,7 +73,6 @@ public static class BlockSnapshots {
             State = (options.State ?? StatusLineState.Capture(sessionState, BlockSelector.RequiredFacts([.. selection]))) with { LastExitCode = options.ExitCode ?? options.State?.LastExitCode, LastDuration = duration },
             PowerShellVersion = CommandHelpers.GetPowerShellVersion(sessionState) ?? PSVersionInfo.PSVersion.ToString(),
             IconSet = options.IconSet,
-            DurationWarning = options.DurationWarning,
             WeatherLocation = options.WeatherLocation,
             SlowProviderWait = TimeSpan.FromSeconds(1.5),
             BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,

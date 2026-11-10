@@ -26,8 +26,35 @@ internal sealed class DirectoryBlock : IImmediateBlock {
             }
         }
 
+        if (context.DirectorySeparator is { Length: > 0 } separator) {
+            text = SeparateComponents(text, separator);
+            if (icon.Length > 0 && text.Length > 0) {
+                // The default block composition inserts a space between icon and text.
+                // Compose this breadcrumb here so the configured separator supplies the spacing.
+                return (string.Empty, icon + separator + text, Metadata.Alignment, Blue);
+            }
+        }
+
         return (icon, text, Metadata.Alignment, Blue);
     }
+
+    private static string SeparateComponents(string text, string separator) {
+        var output = new System.Text.StringBuilder(text.Length);
+        for (int index = 0; index < text.Length; index++) {
+            char character = text[index];
+            if (index > 0 && index + 1 < text.Length && IsSeparator(character) &&
+                !IsSeparator(text[index - 1]) && !IsSeparator(text[index + 1])) {
+                output.Append(separator);
+            }
+            else {
+                output.Append(character);
+            }
+        }
+        return output.ToString();
+    }
+
+    private static bool IsSeparator(char character) =>
+        character == Path.DirectorySeparatorChar || character == Path.AltDirectorySeparatorChar;
 
     private static string Home(IconSet set) => Pick(("\uE617", "⌂", ""), set);
 }

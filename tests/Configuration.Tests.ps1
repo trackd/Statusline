@@ -85,6 +85,30 @@ Describe 'New configuration behavior' -Tag Contract {
         }
     }
 
+    It 'binds prompt appearance from a direct splat and honors explicit overrides' {
+        $settings = @{
+            Left = @('Directory'); Right = @(); ShellIntegration = 'None'; Transient = $false
+            Symbol = '>> '; TransientSymbol = 'tiny> '; DirectorySeparator = ' › '
+            ColorSymbolByExitCode = $true
+        }
+        try {
+            Enable-Prompt @settings
+            $configuration = [StatusLine.Prompt]::Configuration
+            $configuration.Symbol | Should -BeExactly $settings.Symbol
+            $configuration.TransientSymbol | Should -BeExactly $settings.TransientSymbol
+            $configuration.DirectorySeparator | Should -BeExactly $settings.DirectorySeparator
+            $configuration.ColorSymbolByExitCode | Should -BeTrue
+
+            Enable-Prompt -Configuration $configuration -Symbol '' -TransientSymbol '' -DirectorySeparator '' -ColorSymbolByExitCode:$false
+            $updated = [StatusLine.Prompt]::Configuration
+            $updated.Symbol | Should -BeExactly ''
+            $updated.TransientSymbol | Should -BeExactly ''
+            $updated.DirectorySeparator | Should -BeExactly ''
+            $updated.ColorSymbolByExitCode | Should -BeFalse
+        }
+        finally { Disable-Prompt }
+    }
+
     It 'retains a typed console palette through script definition parameter binding' {
         try {
             $block = New-StatusLineBlock -Name PaletteProbe -ScriptBlock { 'x' } -Foreground ([ConsoleColor]::Cyan)

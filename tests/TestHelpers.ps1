@@ -203,7 +203,6 @@ function New-TestPromptConfiguration {
         TransientSymbol = '> '
         ShellContext = $false
         TerminalProgress = $false
-        DurationWarning = $false
         BlockSeparator = $false
         Padding = ''
         Transient = $false

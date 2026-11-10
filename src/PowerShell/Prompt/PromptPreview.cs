@@ -27,7 +27,6 @@ public static class PromptPreview {
             PowerShellVersion = CommandHelpers.GetPowerShellVersion(sessionState),
             IconSet = configuration.IconSet,
             BlockTimeoutMilliseconds = configuration.BlockTimeoutMilliseconds,
-            DurationWarning = configuration.DurationWarning,
             WeatherLocation = configuration.WeatherLocation,
             SlowProviderWait = TimeSpan.Zero,
         };

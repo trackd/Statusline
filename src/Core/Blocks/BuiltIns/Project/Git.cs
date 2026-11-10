@@ -56,7 +56,7 @@ internal sealed record GitRepository(string WorkTree, string GitDirectory) {
 /// nor the status line thread is blocked by large repositories.
 /// </summary>
 internal static class GitStatusProvider {
-    internal static async Task<GitStatus?> ReadStatusAsync(GitRepository repository, CancellationToken token) {
+    private static ProcessStartInfo CreateStartInfo(GitRepository repository) {
         var startInfo = new ProcessStartInfo("git") {
             WorkingDirectory = repository.WorkTree,
             RedirectStandardOutput = true,
@@ -69,6 +69,11 @@ internal static class GitStatusProvider {
         // process environment. ArgumentList preserves spaces in worktree/submodule paths.
         startInfo.ArgumentList.Add("--git-dir=" + repository.GitDirectory);
         startInfo.ArgumentList.Add("--work-tree=" + repository.WorkTree);
+        return startInfo;
+    }
+
+    internal static async Task<GitStatus?> ReadStatusAsync(GitRepository repository, CancellationToken token) {
+        ProcessStartInfo startInfo = CreateStartInfo(repository);
         startInfo.ArgumentList.Add("status");
         startInfo.ArgumentList.Add("--porcelain=v2");
         startInfo.ArgumentList.Add("--branch");
@@ -87,6 +92,39 @@ internal static class GitStatusProvider {
             throw new IOException($"git status exited with code {ExitCode}.");
         }
         catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 2) {
+            return null;
+        }
+    }
+
+    internal static async Task<string?> ReadOriginHostAsync(GitRepository repository, CancellationToken token) {
+        ProcessStartInfo startInfo = CreateStartInfo(repository);
+        startInfo.ArgumentList.Add("remote");
+        startInfo.ArgumentList.Add("get-url");
+        startInfo.ArgumentList.Add("origin");
+        try {
+            var (exitCode, output, _) = await ProcessRunner.RunAsync(startInfo, token).ConfigureAwait(false);
+            if (exitCode != 0) {
+                return null;
+            }
+
+            string remote = output.Trim();
+            if (Uri.TryCreate(remote, UriKind.Absolute, out Uri? uri) && uri.IsFile) {
+                return null;
+            }
+            if (uri is { Host.Length: > 0 }) {
+                return uri.IdnHost;
+            }
+
+            // Git also accepts SCP-style SSH remotes such as git@github.com:owner/repo.
+            int colon = remote.IndexOf(':');
+            if (colon <= 0) {
+                return null;
+            }
+            ReadOnlySpan<char> authority = remote.AsSpan(0, colon);
+            ReadOnlySpan<char> host = authority[(authority.LastIndexOf('@') + 1)..];
+            return Uri.CheckHostName(host.ToString()) == UriHostNameType.Dns ? host.ToString() : null;
+        }
+        catch (Exception exception) when (exception is IOException or System.ComponentModel.Win32Exception) {
             return null;
         }
     }

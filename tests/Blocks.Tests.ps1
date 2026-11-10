@@ -147,6 +147,25 @@ Describe 'Block creation and providers' -Tag Contract {
         finally { Pop-Location }
     }
 
+    It 'selects the Nerd Font Git icon for <Provider>' -ForEach @(
+        @{ Provider = 'GitHub'; RemoteUrl = 'git@github.com:owner/repo.git'; Code = 0xF09B }
+        @{ Provider = 'GitLab'; RemoteUrl = 'https://gitlab.com/owner/repo.git'; Code = 0xF296 }
+        @{ Provider = 'Azure DevOps'; RemoteUrl = 'git@ssh.dev.azure.com:v3/org/project/repo'; Code = 0xF0FD5 }
+        @{ Provider = 'legacy Azure DevOps'; RemoteUrl = 'https://org.visualstudio.com/project/_git/repo'; Code = 0xF0FD5 }
+        @{ Provider = 'unknown host'; RemoteUrl = 'https://github.com.example.org/owner/repo.git'; Code = 0xF062C }
+        @{ Provider = 'no origin'; RemoteUrl = ''; Code = 0xF062C }
+    ) -Skip:(-not (Get-Command git -CommandType Application -ErrorAction Ignore)) {
+        $repository = Join-Path $TestDrive $Provider
+        $null = New-Item -ItemType Directory -Path $repository
+        git -C $repository init --quiet --initial-branch main
+        if ($RemoteUrl) { git -C $repository remote add origin $RemoteUrl }
+        Push-Location -LiteralPath $repository
+        try {
+            (New-TestBlock -Kind Git -IconSet NerdFont).Icon | Should -BeExactly ([char]::ConvertFromUtf32($Code))
+        }
+        finally { Pop-Location }
+    }
+
     It 'pins Git commands despite inherited repository paths and spaces' -Skip:(-not (Get-Command git -CommandType Application -ErrorAction Ignore)) {
         $repository = New-Item -Path (Join-Path $TestDrive 'actual repository') -ItemType Directory
         $other = New-Item -Path (Join-Path $TestDrive 'other repository') -ItemType Directory
@@ -312,32 +331,6 @@ Describe 'Directory display and terminal-specific integration' -Tag Contract {
     }
 }
 
-Describe 'Optional duration warning' -Tag Contract {
-    It 'shows warning=<Expected> for enabled=<Enabled> and exit=<ExitCode>' -ForEach @(
-        @{ Enabled = $true; ExitCode = 1; Errors = 0; Expected = $true }
-        @{ Enabled = $true; ExitCode = 0; Errors = 9; Expected = $false }
-        @{ Enabled = $false; ExitCode = 1; Errors = 9; Expected = $false }
-        @{ Enabled = $true; ExitCode = $null; Errors = 9; Expected = $false }
-    ) {
-        $options = [StatusLine.BlockSnapshotOptions]@{
-            Block = @('Duration'); IconSet = 'None'; Padding = ''; DurationWarning = $Enabled
-            State = [StatusLine.StatusLineState]@{ LastDuration = [timespan]::FromMilliseconds(12); LastExitCode = $ExitCode; ErrorCount = $Errors }
-        }
-        $block = [StatusLine.BlockSnapshots]::Snapshot($options)[0]
-        $block.Text.Contains("$escape[31m⚠$escape[39m") | Should -Be $Expected
-        ($block.Text -replace '\x1b\[[0-9;]*m', '') | Should -BeExactly $(if ($Expected) { '12ms ⚠' } else { '12ms' })
-    }
-
-    It 'forwards the prompt warning setting to its duration block' {
-        $configuration = New-TestPromptConfiguration @{
-            Left = @('Duration'); Right = @(); Input = @(); Block = @()
-            DurationWarning = $true; Style = 'Plain'; IconSet = 'None'; Padding = ''
-            Rows = 1; Symbol = '> '; ShellIntegration = 'None'; Transient = $false
-        }
-        $sequence = Get-TestPrompt -Configuration $configuration -Duration ([timespan]::FromMilliseconds(12)) -ExitCode 1
-        $sequence | Should -Match '\x1b\[31m⚠\x1b\[39m'
-    }
-}
 Describe 'Import folder home display' -Tag Contract {
     BeforeEach {
         $savedDirectoryStyle = [StatusLine.DirectoryDisplay]::Style

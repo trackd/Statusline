@@ -23,7 +23,7 @@ internal static class BuiltInRefresh {
             static (request, token) => request.Block.CollectAsync(request.Context, token), refreshing.Interval,
             TimeSpan.FromMilliseconds(context.BlockTimeoutMilliseconds), context.SlowProviderWait);
         error = snapshot.Error;
-        return snapshot.Value?.Present(context.IconSet);
+        return snapshot.Value?.Present(context);
     }
 
     public static IEnumerable<SegmentRefreshStatus> Diagnostics() {

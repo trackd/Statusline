@@ -13,6 +13,10 @@ public sealed record PromptConfiguration {
     /// <summary>Report command execution using OSC 9;4 indeterminate progress.</summary>
     public bool TerminalProgress { get; init; }
     public string Symbol { get; init; } = " ";
+    /// <summary>Colors the prompt symbol green on success and red on failure.</summary>
+    public bool ColorSymbolByExitCode { get; init; }
+    /// <summary>Optional separator between displayed directory components.</summary>
+    public string? DirectorySeparator { get; init; }
     public bool ConnectRows { get; init; }
     public string ContextSymbol { get; init; } = "╭─ ";
     public string InputLinePrefix { get; init; } = "╰─ ";
@@ -20,7 +24,6 @@ public sealed record PromptConfiguration {
     public string TransientSymbol { get; init; } = "  ";
     /// <summary>Transparent Powerline breaks between blocks.</summary>
     public bool BlockSeparator { get; init; }
-    public bool DurationWarning { get; init; }
     /// <summary>Text inside both edges of each block.</summary>
     public string Padding { get; init; } = " ";
     public bool Transient { get; init; }

@@ -34,7 +34,6 @@ internal static partial class Vt {
     internal const string Reset = "\e[0m";
     internal const string Reverse = "\e[7m";
     internal const string ResetReverse = "\e[0;7m";
-    internal const string RedForeground = "\e[31m";
     internal const string DefaultForeground = "\e[39m";
     internal const string SelectMainDisplay = "\e[0$}";
     internal const string SelectStatusDisplay = "\e[1$}";
