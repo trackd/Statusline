@@ -31,7 +31,8 @@ public sealed class BlockBehaviorTests {
     public void GitRecordsDistinguishChangesFromCleanOrIncompleteInput(string text,
         int ahead, int behind, int staged, int modified, int untracked, int conflicts) {
         GitStatus status = GitStatusProvider.Parse(text);
-        Assert.Equal(new GitStatus(ahead, behind, staged, modified, untracked, conflicts), status);
+        Assert.Equal((ahead, behind, staged, modified, untracked, conflicts),
+            (status.Ahead, status.Behind, status.Staged, status.Modified, status.Untracked, status.Conflicts));
         Assert.Equal(staged + modified + untracked + conflicts > 0, status.IsDirty);
     }
 

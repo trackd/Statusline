@@ -12,8 +12,10 @@ internal static class PromptOutput {
     ];
 
     internal static string Render(PromptOptions options, string path, int width, int status,
-        double? durationMilliseconds, bool statusLine, bool wait = true) =>
-        new PreparedPrompt(options).Render(path, width, status, durationMilliseconds, statusLine, wait);
+        double? durationMilliseconds, bool statusLine, bool wait = true) {
+        using var prepared = new PreparedPrompt(options);
+        return prepared.Render(path, width, status, durationMilliseconds, statusLine, wait);
+    }
 
     internal static void Validate(PromptOptions options) {
         if (options.Rows is not (1 or 2) || options.BlockTimeoutMilliseconds is < 1 or > 60000) {
@@ -31,7 +33,13 @@ internal static class PromptOutput {
         ArgumentNullException.ThrowIfNull(options.Padding);
         ArgumentNullException.ThrowIfNull(options.Symbol);
         ArgumentNullException.ThrowIfNull(options.TransientSymbol);
-        foreach (string name in options.Left.Concat(options.Center).Concat(options.Right)) { _ = Kind(name); }
+        ArgumentNullException.ThrowIfNull(options.EnableHints);
+        ArgumentNullException.ThrowIfNull(options.TransientBlock);
+        foreach (BlockSpec spec in options.Left.Concat(options.Center).Concat(options.Right).Concat(options.TransientBlock)) {
+            if (spec is null) { throw new ArgumentException("Block lists cannot contain null."); }
+            CliBlock.Validate(spec.Settings);
+        }
+        foreach (CliBlock hint in CliBlock.Hints(options.EnableHints)) { hint.Dispose(); }
 
         Color start = options.StartColor is { } first ? NamedColors.Parse(first) : Color.Empty;
         Color end = options.EndColor is { } last ? NamedColors.Parse(last) : Color.Empty;

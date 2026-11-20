@@ -8,6 +8,10 @@ internal static class BuiltInRefresh {
 
     public static BlockContent? Evaluate(IBuiltInBlock block, BlockContext context, out string? error) {
         error = null;
+        if (block.Metadata.Kind == StatusLineBlockKind.GitDetailed) {
+            block = BlockCatalog.Get(StatusLineBlockKind.Git);
+            context = context with { DetailedGit = true };
+        }
         if (block is IImmediateBlock immediate) {
             return immediate.Evaluate(context);
         }

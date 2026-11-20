@@ -14,9 +14,13 @@ internal static class BlockEvaluator {
         BlockContext context, BlockOverrides overrides, StatusLineAlignment? groupAlignment = null) {
         for (int index = 0; index < selection.Count; index++) {
             BlockSelector selector = selection[index];
+            if (selector.Definition is { } policy && !policy.IsVisible(context, context.Width ?? Terminal.Width)) {
+                continue;
+            }
             StatusLineAlignment? placement = groupAlignment ?? selector.Alignment;
             if (selector.Implementation is { } implementation) {
-                if (BuiltInRefresh.Evaluate(implementation, context, out string? error) is { } data &&
+                BlockContext blockContext = selector.Definition?.Detailed == true ? context with { DetailedGit = true } : context;
+                if (BuiltInRefresh.Evaluate(implementation, blockContext, out string? error) is { } data &&
                     (data.Text.Length > 0 || data.Icon.Length > 0)) {
                     blocks.Add(selector.Binding.Render(data, overrides, selector.Definition, placement,
                         implementation.Metadata.OrdinaryLeadingSpace, error,
@@ -56,6 +60,7 @@ internal static class BlockEvaluator {
                 PreserveForeground = definition.Foreground is not null,
                 PreserveBackground = definition.Background is not null,
                 UseOrdinaryLeadingSpace = block.UseOrdinaryLeadingSpace,
+                Priority = definition.Priority,
             };
             if (block.IsStale) {
                 value = value.AsStale(block.LastError);
@@ -68,6 +73,7 @@ internal static class BlockEvaluator {
                 definition.Bold ?? false, definition.Italic ?? false, definition.Underline ?? false, definition.Icon ?? string.Empty) {
                 PreserveForeground = definition.Foreground is not null,
                 PreserveBackground = definition.Background is not null,
+                Priority = definition.Priority,
             };
         }
 

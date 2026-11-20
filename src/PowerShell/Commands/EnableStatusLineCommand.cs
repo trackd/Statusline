@@ -12,6 +12,7 @@ public sealed class EnableStatusLineCommand : PSCmdlet {
     [ArgumentCompleter(typeof(BlockKindCompleter))]
     public object[] Block { get; set; } = ["Cpu", "ProcessMemory", "Clock"];
 
+
     [Parameter]
     [AllowEmptyCollection]
     [ArgumentCompleter(typeof(BlockKindCompleter))]
@@ -52,6 +53,10 @@ public sealed class EnableStatusLineCommand : PSCmdlet {
 
     [Parameter]
     public SwitchParameter UpdateDuringCommand { get; set; }
+
+    [Parameter]
+    [ValidateRange(0, int.MaxValue)]
+    public int CompletionMessageThresholdMilliseconds { get; set; }
 
     [Parameter]
     public TextContrastMode TextContrast { get; set; } = TextContrastMode.Automatic;
@@ -139,7 +144,8 @@ public sealed class EnableStatusLineCommand : PSCmdlet {
             Target,
             outputPath,
             System.Management.Automation.Runspaces.Runspace.DefaultRunspace.InstanceId,
-            StartColor, EndColor, BlockTimeoutMilliseconds, UpdateDuringCommand.IsPresent, IdleTimeoutSeconds, WeatherLocation, BlendBackground.IsPresent, TextContrast);
+            StartColor, EndColor, BlockTimeoutMilliseconds, UpdateDuringCommand.IsPresent, IdleTimeoutSeconds, WeatherLocation, BlendBackground.IsPresent, TextContrast,
+            CompletionMessageThresholdMilliseconds);
         int previousDepth = DirectoryDisplay.MaximumComponents;
         bool started = false;
         try {

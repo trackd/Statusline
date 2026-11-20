@@ -3,6 +3,29 @@ BeforeAll {
 }
 
 Describe 'Prompt rendering and lifecycle' -Tag Contract {
+    It 'refreshes a changed width once while the reader owns input' {
+        Import-Module PSReadLine
+        Enable-Prompt -Left @() -Right @() -Symbol 'full> ' -ShellIntegration None
+        $runspace = [runspace]::DefaultRunspace
+        try {
+            $null = & prompt
+            $sessions = [StatusLine.PromptSession].GetField('Sessions', [Reflection.BindingFlags]'Static,NonPublic').GetValue($null)
+            $session = $sessions[$runspace.InstanceId]
+            $width = [StatusLine.PromptSession].GetField('drawnWidth', [Reflection.BindingFlags]'Instance,NonPublic')
+            $width.SetValue($session, -1)
+            [StatusLine.PromptSession]::BeginResize($runspace) | Should -BeFalse
+            [StatusLine.PromptSession]::SetReading($runspace, $true)
+            [StatusLine.PromptSession]::BeginResize($runspace) | Should -BeTrue
+            ((& prompt) -replace '\x1b\[[0-9;]*m') | Should -BeExactly 'full> '
+            [StatusLine.PromptSession]::EndResize($runspace)
+            [StatusLine.PromptSession]::BeginResize($runspace) | Should -BeFalse
+        }
+        finally {
+            [StatusLine.PromptSession]::SetReading($runspace, $false)
+            [StatusLine.PromptSession]::EndResize($runspace)
+            Disable-Prompt
+        }
+    }
     BeforeEach { $savedTerminalEnvironment = Enter-TestTerminalEnvironment }
 
     AfterEach { Restore-TestTerminalEnvironment -SavedEnvironment $savedTerminalEnvironment }

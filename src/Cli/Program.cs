@@ -22,8 +22,9 @@ internal static class Program {
         string? session = values.GetValueOrDefault("--session");
         int parentPid = values.TryGetValue("--parent-pid", out string? owner) ? int.Parse(owner, CultureInfo.InvariantCulture) : 0;
         if (command is "worker" or "worker-shell") {
-            return new SessionWorker(session ?? throw new ArgumentException("Worker requires a session."), parentPid, configPath, statusFile,
-                shellPipes: command == "worker-shell").Run();
+            using var worker = new SessionWorker(session ?? throw new ArgumentException("Worker requires a session."), parentPid, configPath, statusFile,
+                shellPipes: command == "worker-shell");
+            return worker.Run();
         }
 
         if (command == "channel") {
@@ -45,7 +46,7 @@ internal static class Program {
             if (parentPid <= 0) { throw new ArgumentException("Serve requires --parent-pid."); }
 
             session = Guid.NewGuid().ToString("N");
-            var worker = new SessionWorker(session, parentPid, configPath, statusFile);
+            using var worker = new SessionWorker(session, parentPid, configPath, statusFile);
             SessionProtocol.RegisterOwner(session, parentPid, configPath, statusFile);
             try { return worker.Run(standardInput: true); }
             finally { SessionProtocol.DeleteOwner(session); }
@@ -155,7 +156,7 @@ internal static class Program {
         var profile = ShellIntegrationProfile.ResolveForShell(oneShot.ShellIntegration, request.ExternalIntegration);
         string output = command switch {
             "command-start" => CommandStart(profile, request.CommandLine),
-            "transient" => TerminalText.Sanitize(oneShot.TransientSymbol, false) + Vt.Reset,
+            "transient" => PromptOutput.Render(oneShot.TransientView(), request.Path, request.Width, request.Status, request.Duration, false),
             _ => PromptOutput.Render(command == "statusline" ? oneShot.StatusLine ?? oneShot : oneShot,
                 request.Path, request.Width, request.Status, request.Duration, command == "statusline"),
         };

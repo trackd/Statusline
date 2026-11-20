@@ -4,9 +4,9 @@ using System.Text;
 namespace StatusLine.Cli;
 
 // One instance per worker layout. Access is serialized by the session gate.
-internal sealed class PreparedPrompt {
+internal sealed class PreparedPrompt : IDisposable {
     private readonly PromptOptions options;
-    private readonly Selection[] selection;
+    private readonly CliBlock[] selection;
     private readonly IBuiltInBlock[] refreshing;
     private readonly List<StatusLineBlock> blocks;
     private readonly BlockGradientCache gradient;
@@ -18,6 +18,7 @@ internal sealed class PreparedPrompt {
     private int previousWidth;
     private bool previousStatusLine;
     private bool previousUnicode;
+    private int previousStatus;
 
     internal PreparedPrompt(PromptOptions options) {
         PromptOutput.Validate(options);
@@ -26,13 +27,13 @@ internal sealed class PreparedPrompt {
         end = options.EndColor is { } last ? NamedColors.Parse(last) : Color.Empty;
         symbol = TerminalText.Sanitize(options.Symbol, keepStyles: false);
         selection = [.. Compile(options.Left, StatusLineAlignment.Left),
-            .. Compile(options.Center, StatusLineAlignment.Center), .. Compile(options.Right, StatusLineAlignment.Right)];
+            .. Compile(options.Center, StatusLineAlignment.Center), .. Compile(options.Right, StatusLineAlignment.Right), .. CliBlock.Hints(options.EnableHints)];
         blocks = new(selection.Length);
-        refreshing = [.. selection.Select(item => item.Implementation).Where(block => block is IRefreshingBlock)];
+        refreshing = [.. selection.Select(item => item.Implementation).OfType<IRefreshingBlock>()];
         gradient = new(start, end, options.Style);
 
-        static IEnumerable<Selection> Compile(string[] names, StatusLineAlignment alignment) {
-            foreach (string name in names) { yield return new(name, PromptOutput.Kind(name), alignment); }
+        static IEnumerable<CliBlock> Compile(BlockSpec[] specs, StatusLineAlignment alignment) {
+            foreach (BlockSpec spec in specs) { yield return new(spec.Settings, alignment); }
         }
     }
 
@@ -45,33 +46,36 @@ internal sealed class PreparedPrompt {
         }
     }
 
-    internal string Render(string path, int width, int status, double? durationMilliseconds, bool statusLine, bool wait = true) {
+    internal string Render(string path, int width, int status, double? durationMilliseconds, bool statusLine, bool wait = true, StatusLineState? editor = null) {
         if (!statusLine && options.Rows == 1 && (options.Right.Length != 0 || options.Center.Length != 0)) {
             throw new ArgumentException("Right and Center prompt groups require Rows = 2.");
         }
 
         DirectoryDisplay.Style = options.DirectoryStyle;
-        BlockContext context = Context(path, status, durationMilliseconds, wait);
+        BlockContext context = Context(path, status, durationMilliseconds, wait) with { Width = width };
+        if (editor is not null) { context = context with { State = editor with { Location = path, FileSystemPath = path, LastExitCode = status, LastDuration = context.State.LastDuration } }; }
         blocks.Clear();
-        foreach (Selection item in selection) {
+        foreach (CliBlock item in selection) {
             if (item.Evaluate(context, options.Padding, wait) is { } block) { blocks.Add(block); }
         }
 
         bool unicode = TextMeasurement.UseUnicode;
-        if (frame is not null && previousWidth == width && previousStatusLine == statusLine && previousUnicode == unicode && previous.Length == blocks.Count) {
+        if (frame is not null && previousWidth == width && previousStatusLine == statusLine && previousUnicode == unicode &&
+            (!options.ColorSymbolByExitCode || previousStatus == status) && previous.Length == blocks.Count) {
             int index = 0;
             while (index < blocks.Count && ReferenceEquals(previous[index], blocks[index])) { index++; }
 
             if (index == blocks.Count) { return frame; }
         }
 
-        string result = Draw(width, statusLine);
+        string result = Draw(width, statusLine, status);
         if (previous.Length != blocks.Count) { previous = new StatusLineBlock[blocks.Count]; }
 
         blocks.CopyTo(previous);
         previousWidth = width;
         previousStatusLine = statusLine;
         previousUnicode = unicode;
+        previousStatus = status;
         return frame = result;
     }
 
@@ -87,13 +91,15 @@ internal sealed class PreparedPrompt {
         BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,
         SlowProviderWait = wait ? TimeSpan.FromMilliseconds(options.BlockTimeoutMilliseconds) : TimeSpan.Zero,
         WeatherLocation = options.WeatherLocation,
+        DirectorySeparator = options.DirectorySeparator,
     };
 
-    private string Draw(int width, bool statusLine) {
+    private string Draw(int width, bool statusLine, int status) {
         if (statusLine) { return Row(width); }
 
         string marker = TerminalText.Clip(symbol, width - 1).Sequence;
-        if (options.Rows == 2) { return Row(width - 1) + Vt.Reset + "\n" + marker; }
+        if (options.ColorSymbolByExitCode) { marker = Vt.Sgr(status == 0 ? ConsoleColor.DarkGreen : ConsoleColor.DarkRed, Color.Empty) + marker + Vt.Reset; }
+        if (options.Rows == 2 || options.EnableHints.Length > 0) { return Row(width - 1) + Vt.Reset + "\n" + marker; }
 
         int budget = Math.Max(0, width - 1 - TerminalText.Measure(marker) - Math.Min(20, (width - 1) / 2));
         if (options.BlendBackground) { return Row(budget) + Vt.Reset + marker; }
@@ -113,28 +119,10 @@ internal sealed class PreparedPrompt {
         finally { StringBuilderCache.Return(output); }
     }
 
-    private sealed class Selection(string name, StatusLineBlockKind kind, StatusLineAlignment alignment) {
-        internal IBuiltInBlock Implementation { get; } = BlockCatalog.Get(kind);
-        private BlockContent? previousContent;
-        private string? previousError;
-        private StatusLineBlock? block;
-        private bool unicode;
-
-        internal StatusLineBlock? Evaluate(BlockContext context, string padding, bool wait) {
-            BlockContent? content = BuiltInRefresh.Evaluate(Implementation, context, out string? error);
-            if (error is not null && wait) { Console.Error.WriteLine($"statusline: {name}: {error}"); }
-
-            if (content is not { } value) { return null; }
-
-            if (block is not null && previousContent == content && previousError == error && unicode == TextMeasurement.UseUnicode) { return block; }
-
-            var next = new StatusLineBlock(value.Text, value.Accent, Color.Empty, alignment, padding, icon: value.Icon) {
-                Shrinkable = kind == StatusLineBlockKind.Directory,
-            };
-            previousContent = content;
-            previousError = error;
-            unicode = TextMeasurement.UseUnicode;
-            return block = error is null ? next : next.AsStale(error);
-        }
+    public void Dispose() {
+        foreach (CliBlock item in selection) { item.Dispose(); }
     }
+
+    internal IEnumerable<string> Errors => selection.Where(item => item.Error is not null).Select(item => item.Label + ": " + item.Error);
+
 }

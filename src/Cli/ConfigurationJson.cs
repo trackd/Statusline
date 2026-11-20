@@ -4,6 +4,8 @@ namespace StatusLine.Cli;
 
 [JsonSourceGenerationOptions(UseStringEnumConverter = true, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(PromptOptions))]
+[JsonSerializable(typeof(BlockSettings))]
+[JsonSerializable(typeof(StatusLineState))]
 [JsonSerializable(typeof(SessionRequest))]
 [JsonSerializable(typeof(SessionResponse))]
 [JsonSerializable(typeof(SessionOwner))]

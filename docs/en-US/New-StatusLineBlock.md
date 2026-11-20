@@ -23,7 +23,9 @@ Creates a reusable built-in or script-backed block definition.
 New-StatusLineBlock [-Kind] <StatusLineBlockKind> [-Name <string>] [-IntervalMilliseconds <int>]
  [-TimeoutMilliseconds <int>] [-Icon <string>] [-Foreground <TerminalColor>]
  [-Background <TerminalColor>] [-Alignment <StatusLineAlignment>] [-Bold] [-Italic] [-Underline]
- [-Padding <string>] [<CommonParameters>]
+ [-Padding <string>] [-MinimumWidth <int>] [-MaximumWidth <int>] [-Priority <int>]
+ [-MinimumDurationMilliseconds <int>] [-SshOnly] [-Detailed]
+ [-DetectFiles <string[]>] [<CommonParameters>]
 ```
 
 ### Script
@@ -32,7 +34,9 @@ New-StatusLineBlock [-Kind] <StatusLineBlockKind> [-Name <string>] [-IntervalMil
 New-StatusLineBlock [-ScriptBlock] <scriptblock> [-Name <string>] [-IntervalMilliseconds <int>]
  [-TimeoutMilliseconds <int>] [-Icon <string>] [-Foreground <TerminalColor>]
  [-Background <TerminalColor>] [-Alignment <StatusLineAlignment>] [-Bold] [-Italic] [-Underline]
- [-Padding <string>] [<CommonParameters>]
+ [-Padding <string>] [-MinimumWidth <int>] [-MaximumWidth <int>] [-Priority <int>]
+ [-MinimumDurationMilliseconds <int>] [-SshOnly] [-Detailed]
+ [-DetectFiles <string[]>] [<CommonParameters>]
 ```
 
 ## ALIASES
@@ -342,6 +346,153 @@ Use underlined text.
 ```yaml
 Type: System.Management.Automation.SwitchParameter
 DefaultValue: False
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -MinimumWidth
+
+Hide the block below this terminal width.
+
+```yaml
+Type: System.Int32
+DefaultValue: 0
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -MaximumWidth
+
+Hide above this width; zero disables the upper limit.
+
+```yaml
+Type: System.Int32
+DefaultValue: 0
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -Priority
+
+Higher values survive longer when blocks must be dropped to fit.
+
+```yaml
+Type: System.Int32
+DefaultValue: 0
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -MinimumDurationMilliseconds
+
+Show only when the last command duration meets this threshold.
+
+```yaml
+Type: System.Int32
+DefaultValue: 0
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -SshOnly
+
+Show only when SSH_CONNECTION, SSH_CLIENT or SSH_TTY is present.
+
+```yaml
+Type: System.Management.Automation.SwitchParameter
+DefaultValue: False
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -Detailed
+
+For Git, show separate working-tree and index change types, stash count and repository operation.
+
+```yaml
+Type: System.Management.Automation.SwitchParameter
+DefaultValue: False
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
+
+### -DetectFiles
+
+Show when any named file exists in the current directory. Accepts file names only.
+
+```yaml
+Type: System.String[]
+DefaultValue: None
 SupportsWildcards: false
 Aliases: []
 ParameterSets:

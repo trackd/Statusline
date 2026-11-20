@@ -472,8 +472,12 @@ internal static class StatusLineRenderer {
                 if (block.Shrinkable) {
                     reducible += Math.Max(0, TerminalText.Measure(block.Text) - MinimumShrinkCells);
                 }
-                // Prefer the last secondary block, then the last primary block; shrinkable blocks go last.
-                else if (drop < 0 || scratch[drop].Alignment != secondary || block.Alignment == secondary) {
+                // Drop lower priorities first. Ties retain the existing preference for paths and primary content.
+                if (drop < 0 || block.Priority < scratch[drop].Priority ||
+                    block.Priority == scratch[drop].Priority &&
+                    (scratch[drop].Shrinkable && !block.Shrinkable ||
+                    scratch[drop].Shrinkable == block.Shrinkable &&
+                    (scratch[drop].Alignment != secondary || block.Alignment == secondary))) {
                     drop = index;
                 }
             }

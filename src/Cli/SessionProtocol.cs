@@ -16,6 +16,11 @@ internal sealed class SessionRequest {
     public string Shell { get; set; } = "raw";
     public string EnvironmentKey { get; set; } = string.Empty;
     public string? CommandLine { get; set; }
+    public int InputCursor { get; set; }
+    public long InputRevision { get; set; }
+    public string? InputMode { get; set; }
+    public string? InputCommand { get; set; }
+    public int JobCount { get; set; }
     public string? ConfigPath { get; set; }
     public string? StatusFile { get; set; }
     public ExternalIntegration ExternalIntegration { get; set; }
@@ -39,6 +44,7 @@ internal sealed class SessionResponse {
     public string[] ProviderErrors { get; set; } = [];
     public string? ShellInput { get; set; }
     public string? ShellOutput { get; set; }
+    public long? InputRevision { get; set; }
 }
 
 internal sealed class SessionOwner {
@@ -184,12 +190,12 @@ internal static class SessionProtocol {
             config ??= owner.ConfigPath;
             statusFile ??= owner.StatusFile;
             try {
-                SessionResponse running = Send(session, new(), 100);
+                SessionResponse running = Send(session, new(), 1000);
                 if (running.ParentPid == parentPid && running.ConfigPath == config && running.StatusFile == statusFile) { return; }
 
                 throw new ArgumentException("Session is owned by another shell.");
             }
-            catch (Exception exception) when (exception is TimeoutException or IOException) { }
+            catch (Exception exception) when (exception is TimeoutException or IOException or OperationCanceledException) { }
         }
 
         var start = new ProcessStartInfo(Environment.ProcessPath ?? throw new IOException("Executable path unavailable.")) {
@@ -231,7 +237,7 @@ internal static class SessionProtocol {
             }
 
             try {
-                SessionResponse response = Send(session, new(), 100);
+                SessionResponse response = Send(session, new(), 1000);
                 if (response.WorkerPid != worker.Id || response.ParentPid != parentPid) {
                     throw new ArgumentException("Session token is already owned by another worker.");
                 }
@@ -249,7 +255,7 @@ internal static class SessionProtocol {
                 startup.Ready = true;
                 return;
             }
-            catch (Exception exception) when (exception is TimeoutException or IOException) {
+            catch (Exception exception) when (exception is TimeoutException or IOException or OperationCanceledException) {
                 Thread.Sleep(20);
             }
         }

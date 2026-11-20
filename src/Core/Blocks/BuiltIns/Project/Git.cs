@@ -6,8 +6,22 @@ namespace StatusLine.Blocks.BuiltIns.Project;
 /// <summary>Working tree status parsed from <c>git status --porcelain=v2 --branch</c>.</summary>
 internal sealed record GitStatus(int Ahead, int Behind, int Staged, int Modified, int Untracked, int Conflicts) {
     public bool IsDirty => Staged + Modified + Untracked + Conflicts > 0;
+    public GitChanges Working { get; init; }
+    public GitChanges Index { get; init; }
+    public int Stash { get; init; }
+    public string? Operation { get; init; }
 }
 
+internal readonly record struct GitChanges(int Added, int Modified, int Deleted, int Renamed) {
+    internal GitChanges Add(char status) => status switch {
+        'A' or '?' => this with { Added = Added + 1 },
+        'M' or 'T' => this with { Modified = Modified + 1 },
+        'D' => this with { Deleted = Deleted + 1 },
+        'R' or 'C' => this with { Renamed = Renamed + 1 },
+        _ => this
+    };
+    internal bool Changed => Added + Modified + Deleted + Renamed > 0;
+}
 /// <summary>Repository located by walking up from a directory.</summary>
 internal sealed record GitRepository(string WorkTree, string GitDirectory) {
     /// <summary>Finds the nearest repository, following <c>gitdir:</c> files used by worktrees and submodules.</summary>
@@ -77,11 +91,12 @@ internal static class GitStatusProvider {
         startInfo.ArgumentList.Add("status");
         startInfo.ArgumentList.Add("--porcelain=v2");
         startInfo.ArgumentList.Add("--branch");
+        startInfo.ArgumentList.Add("--show-stash");
 
         try {
             (int ExitCode, string Output, string Error) = await ProcessRunner.RunAsync(startInfo, token).ConfigureAwait(false);
             if (ExitCode == 0) {
-                return Parse(Output);
+                return Parse(Output) with { Operation = ReadOperation(repository.GitDirectory) };
             }
 
             if (!File.Exists(Path.Combine(repository.GitDirectory, "config")) &&
@@ -94,6 +109,18 @@ internal static class GitStatusProvider {
         catch (System.ComponentModel.Win32Exception exception) when (exception.NativeErrorCode == 2) {
             return null;
         }
+    }
+
+    private static string? ReadOperation(string directory) {
+        if (Directory.Exists(Path.Combine(directory, "rebase-merge")) || Directory.Exists(Path.Combine(directory, "rebase-apply"))) {
+            return "REBASE";
+        }
+        foreach (var (file, name) in new[] { ("MERGE_HEAD", "MERGE"), ("CHERRY_PICK_HEAD", "CHERRY-PICK"), ("REVERT_HEAD", "REVERT"), ("BISECT_LOG", "BISECT") }) {
+            if (File.Exists(Path.Combine(directory, file))) {
+                return name;
+            }
+        }
+        return null;
     }
 
     internal static async Task<string?> ReadOriginHostAsync(GitRepository repository, CancellationToken token) {
@@ -131,6 +158,8 @@ internal static class GitStatusProvider {
 
     internal static GitStatus Parse(string output) {
         int ahead = 0, behind = 0, staged = 0, modified = 0, untracked = 0, conflicts = 0;
+        int stash = 0;
+        GitChanges working = default, index = default;
         foreach (ReadOnlySpan<char> line in output.AsSpan().EnumerateLines()) {
             if (line.StartsWith("# branch.ab ")) {
                 ReadOnlySpan<char> counts = line[12..];
@@ -140,7 +169,12 @@ internal static class GitStatusProvider {
                     int.TryParse(counts[(separator + 2)..], NumberStyles.None, CultureInfo.InvariantCulture, out behind);
                 }
             }
+            else if (line.StartsWith("# stash ")) {
+                int.TryParse(line[8..], NumberStyles.None, CultureInfo.InvariantCulture, out stash);
+            }
             else if (line.Length > 3 && (line[0] == '1' || line[0] == '2') && line[1] == ' ') {
+                index = index.Add(line[2]);
+                working = working.Add(line[3]);
                 if (line[2] != '.') {
                     staged++;
                 }
@@ -154,9 +188,12 @@ internal static class GitStatusProvider {
             }
             else if (line.StartsWith("? ")) {
                 untracked++;
+                working = working.Add('?');
             }
         }
 
-        return new GitStatus(ahead, behind, staged, modified, untracked, conflicts);
+        return new GitStatus(ahead, behind, staged, modified, untracked, conflicts) {
+            Working = working, Index = index, Stash = stash
+        };
     }
 }

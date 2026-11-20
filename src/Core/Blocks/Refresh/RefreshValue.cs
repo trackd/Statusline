@@ -30,6 +30,8 @@ internal sealed partial class RefreshValue<T> : IDisposable {
     private string? lastError;
     private DateTime? lastUpdated;
     private RefreshOutcome outcome;
+    private object? scope;
+    private long revision;
 
     internal RefreshSnapshot<T> Snapshot() {
         lock (gate) {
@@ -48,9 +50,19 @@ internal sealed partial class RefreshValue<T> : IDisposable {
         Read(read, static (reader, token) => reader(token), interval, timeout, wait).Value;
 
     public RefreshSnapshot<T> Read<TState>(TState state, Func<TState, CancellationToken, Task<T>> read,
-        TimeSpan interval, TimeSpan timeout, TimeSpan wait) {
+        TimeSpan interval, TimeSpan timeout, TimeSpan wait, object? scope = null) {
         Task? pending;
         lock (gate) {
+            if (!Equals(this.scope, scope)) {
+                this.scope = scope;
+                revision++;
+                value = default;
+                hasValue = false;
+                lastUpdated = null;
+                lastError = null;
+                outcome = RefreshOutcome.Pending;
+                nextDue = 0;
+            }
             if (!disposed && !busy && Stopwatch.GetTimestamp() >= nextDue) {
                 busy = true;
                 Start(state, read, interval, timeout);
@@ -74,23 +86,23 @@ internal sealed partial class RefreshValue<T> : IDisposable {
         notification = completed.Task;
         // ExecuteAsync dispatches collection before synchronous provider code can run. The
         // supervisor itself needs no second worker hop.
-        _ = RefreshAsync(token => read(state, token), interval, source, completed);
+        _ = RefreshAsync(token => read(state, token), interval, source, completed, revision);
     }
 
     private async Task RefreshAsync(Func<CancellationToken, Task<T>> read, TimeSpan interval,
-        CancellationTokenSource source, TaskCompletionSource completed) {
+        CancellationTokenSource source, TaskCompletionSource completed, long requestedRevision) {
         Task<T> work = ExecuteAsync(read, source.Token);
         try {
             T result = await work.WaitAsync(source.Token).ConfigureAwait(false);
             lock (gate) {
-                if (!disposed && !source.IsCancellationRequested) {
+                if (!disposed && !source.IsCancellationRequested && requestedRevision == revision) {
                     value = result;
                     hasValue = true;
                     lastError = null;
                     outcome = RefreshOutcome.Success;
                     lastUpdated = DateTime.Now;
                 }
-                else if (source.IsCancellationRequested) {
+                else if (source.IsCancellationRequested && requestedRevision == revision) {
                     lastError = "Refresh timed out or was cancelled.";
                     outcome = disposed ? RefreshOutcome.Cancelled : RefreshOutcome.TimedOut;
                 }
@@ -98,13 +110,15 @@ internal sealed partial class RefreshValue<T> : IDisposable {
         }
         catch (Exception exception) when (exception is not OutOfMemoryException) {
             lock (gate) {
-                if (exception is OperationCanceledException) {
-                    lastError = "Refresh timed out or was cancelled.";
-                    outcome = disposed ? RefreshOutcome.Cancelled : RefreshOutcome.TimedOut;
-                }
-                else {
-                    lastError = exception.Message;
-                    outcome = RefreshOutcome.Fault;
+                if (requestedRevision == revision) {
+                    if (exception is OperationCanceledException) {
+                        lastError = "Refresh timed out or was cancelled.";
+                        outcome = disposed ? RefreshOutcome.Cancelled : RefreshOutcome.TimedOut;
+                    }
+                    else {
+                        lastError = exception.Message;
+                        outcome = RefreshOutcome.Fault;
+                    }
                 }
             }
         }
@@ -120,7 +134,8 @@ internal sealed partial class RefreshValue<T> : IDisposable {
         catch (Exception exception) when (exception is not OutOfMemoryException) { }
 
         lock (gate) {
-            nextDue = Stopwatch.GetTimestamp() + (long)(interval.TotalSeconds * Stopwatch.Frequency);
+            nextDue = requestedRevision == revision
+                ? Stopwatch.GetTimestamp() + (long)(interval.TotalSeconds * Stopwatch.Frequency) : 0;
             busy = false;
             cancellation = null;
         }

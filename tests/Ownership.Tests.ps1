@@ -5,6 +5,48 @@ BeforeAll {
     }
 }
 
+Describe 'Statusline during editor prompt repaint' -Tag Lifecycle {
+    It 'keeps status output enabled after a reader repaint with status installed last <StatusLast>' -ForEach @(
+        @{ StatusLast = $true }
+        @{ StatusLast = $false }
+    ) {
+        Import-Module PSReadLine
+        $ownerId = [runspace]::DefaultRunspace.InstanceId
+        $updaterType = [StatusLine.StatusBar].Assembly.GetType('StatusLine.StatusLineUpdater')
+        $foreground = $updaterType.GetField('foregroundOutput', [Reflection.BindingFlags]'Static,NonPublic')
+        $counter = New-StatusLineBlock -Name RepaintClock -ScriptBlock { Get-Date -Format 'HH:mm:ss.fffffff' } -IntervalMilliseconds 250
+        $writer = [IO.StringWriter]::new()
+        $original = [Console]::Out
+        try {
+            [Console]::SetOut([IO.TextWriter]::Synchronized($writer))
+            if ($StatusLast) {
+                Enable-Prompt -Left @() -Right @() -ShellIntegration None
+                Enable-StatusLine -Block $counter -Force -IntervalMilliseconds 100 -IdleTimeoutSeconds 0
+            }
+            else {
+                Enable-StatusLine -Block $counter -Force -IntervalMilliseconds 100 -IdleTimeoutSeconds 0
+                Enable-Prompt -Left @() -Right @() -ShellIntegration None
+            }
+            [StatusLine.StatusLineActivity]::BeginReadLine($ownerId)
+            [StatusLine.PromptSession]::SetReading([runspace]::DefaultRunspace, $true)
+            Set-TestHostDeferral -Deferred
+            Wait-RefreshCondition -FlushHost { $writer.ToString().Contains('[2K') }
+            $null = & prompt
+            $foreground.GetValue($null) | Should -BeFalse
+            $before = $writer.ToString().Length
+            Wait-RefreshCondition -FlushHost { $writer.ToString().Length -gt $before }
+        }
+        finally {
+            [StatusLine.PromptSession]::SetReading([runspace]::DefaultRunspace, $false)
+            [StatusLine.StatusLineActivity]::EndReadLine($ownerId)
+            Disable-StatusLine -Force
+            Disable-Prompt
+            [Console]::SetOut($original)
+            $counter.Dispose()
+        }
+    }
+}
+
 Describe 'Terminal command boundaries and ownership' -Tag Lifecycle {
     BeforeEach { $savedTerminalEnvironment = Enter-TestTerminalEnvironment }
 

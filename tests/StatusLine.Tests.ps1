@@ -72,7 +72,7 @@ Describe 'Statusline output and lifecycle' -Tag Lifecycle {
             # Exercise both paths regardless of whether Pester was launched from a terminal or a pipe.
             Set-TestHostDeferral -Deferred:$DeferHost
             Wait-RefreshCondition {
-                $null = $ExecutionContext.Events.GenerateEvent('PowerShell.OnIdle', $null, @(), $null, $true, $true)
+                $null = $ExecutionContext.Events.GenerateEvent('StatusLine.Refresh', $null, @(), $null, $true, $true)
                 [regex]::Matches($writer.ToString(), '\x1b\[2K').Count -gt 1
             }
         }

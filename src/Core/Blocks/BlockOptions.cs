@@ -74,4 +74,9 @@ public enum StatusLineBlockKind {
     Runspaces,
     HistoryId,
     Shell,
+    UserHost,
+    Jobs,
+    RunningCommand,
+    ViMode,
+    GitDetailed,
 }

@@ -150,8 +150,9 @@ prompt or inside `StatusLine` for the bar. Names are case-insensitive.
 
 | Category | Blocks |
 | --- | --- |
-| Command and location | `Directory`, `Git`, `Status`, `Duration`, `Elevation` |
-| Shell and machine | `Shell`, `Os`, `User`, `Host` |
+| Command and location | `Directory`, `Git`, `GitDetailed`, `Status`, `Duration`, `Elevation` |
+| Shell and machine | `Shell`, `Os`, `User`, `Host`, `UserHost` |
+| Activity | `Jobs`, `RunningCommand`, `ViMode` |
 | Live metrics | `Cpu`, `Gpu`, `SystemMemory`, `Network`, `Battery` |
 | Time and weather | `Clock`, `Date`, `Uptime`, `Weather` |
 | Project and runtimes | `Package`, `VirtualEnv`, `Node`, `Python`, `Dotnet`, `Go`, `Rust`, `Java`, `Ruby` |
@@ -169,6 +170,91 @@ asynchronously in an initialized session.
 
 The PowerShell-only blocks `PowerShell`, `ProcessMemory`, `Errors`, `StackCount`,
 `NestedPrompt`, `Runspaces`, and `HistoryId` are unavailable in the CLI.
+
+### Block definitions and conditional visibility
+
+Existing string lists continue to work. Use objects in the same lists for per-block options:
+
+```json
+{
+  "Left": [
+    "UserHost",
+    { "Kind": "Directory", "Priority": 10 },
+    { "Kind": "Package", "DetectFiles": ["package.json"] }
+  ],
+  "Right": [
+    { "Kind": "GitDetailed", "MinimumWidth": 100 },
+    { "Kind": "Duration", "MinimumDurationMilliseconds": 1000 }
+  ],
+  "Rows": 2,
+  "DirectorySeparator": "  ",
+  "ColorSymbolByExitCode": true,
+  "Transient": true,
+  "TransientBlock": ["Duration"]
+}
+```
+
+Definitions support Kind, Icon, Foreground, Background, Padding, Priority, MinimumWidth,
+MaximumWidth (zero disables the upper limit), MinimumDurationMilliseconds, SshOnly, Commands,
+DetectFiles and TimeoutMilliseconds. Higher priorities survive longer when fitting a narrow row.
+Conditions combine; any named DetectFiles marker must exist in the current directory. File names
+are literal, without wildcards or parent-directory traversal. SSH markers are inherited when the
+worker starts. GitDetailed shares Git's collection cache and shows separate working/index change
+types, stash count and active repository operations.
+
+### Live Zsh hints and asynchronous prompts
+
+The Linux Zsh channel adapter observes ZLE input and receives asynchronous frames from the persistent
+worker. It updates hints and completed providers without Enter, preserves bindings and lets ZLE
+handle syntax highlighting, predictions and multiline redisplay. There is at most one edit request
+in flight; newer input replaces unsent work and outdated replies cannot repaint the current buffer.
+Hints append to the right group and automatically use a two-row prompt.
+
+```json
+{
+  "Left": ["Directory"],
+  "EnableHints": ["az", "kubernetes", "git"],
+  "Symbol": "❯ "
+}
+```
+
+Preset names are az (alias azure), aws, kubernetes (alias kubectl), git and docker. Git hints use
+GitDetailed. Command matching recognizes aliases, command paths and lexical pipeline separators.
+It is not a full shell evaluator; wrapper commands and dynamically generated command names may
+need explicit matching. Input longer than 32,768 characters omits command matching.
+
+Custom hints use the same list:
+
+```json
+{
+  "Left": ["Directory"],
+  "EnableHints": [
+    "git",
+    {
+      "Name": "DeployTarget",
+      "Commands": ["deploy", "terraform"],
+      "Executable": "deployment-context",
+      "Arguments": ["--format", "hint"],
+      "IntervalMilliseconds": 5000,
+      "TimeoutMilliseconds": 1000
+    }
+  ]
+}
+```
+
+The executable receives a JSON snapshot on stdin and returns display text on stdout. InputLine
+contains the full unexecuted buffer, including newlines. InputCursor is a zero-based UTF-16 offset;
+the adapter converts ZLE character offsets. InputCommand is the lexical command at the cursor.
+The snapshot also includes location, exit status, duration, running jobs and Vi mode where supplied.
+Input text is never interpolated into executable arguments or evaluated as shell code. Input
+changes invalidate old results; the interval applies while input remains unchanged. Standard
+terminal sanitization applies to output. Custom blocks can also appear in ordinary groups by
+omitting Commands. A nonzero exit or timeout is reported through provider rendering/diagnostics.
+
+Jobs and ViMode currently receive live facts from the Linux Zsh editor adapter. RunningCommand is
+available in a live statusline with UpdateDuringCommand enabled and clears at the next prompt.
+Bash/Fish and the macOS request/client transport retain prompt-boundary behavior; they do not yet
+send live editor snapshots. The PowerShell module leaves input assistance to PSReadLine and shell completion.
 
 ## Live status bar
 
@@ -235,7 +321,7 @@ client for each prompt. macOS Zsh/Fish currently use short-lived clients.
 `IdleTimeoutSeconds` defaults to 60; set it to 0 to disable idle pausing.
 `UpdateDuringCommand` defaults to false. Set it to true to continue refreshing
 during commands, subject to the idle timeout. Activity is measured from prompt
-and command-start events; individual keystrokes are not monitored.
+and command-start events, plus editor changes when the Linux Zsh adapter is active.
 
 `ShellIntegration: "Auto"` reports prompt/command boundaries and the working
 directory in supported terminals. It defers events already supplied by terminal

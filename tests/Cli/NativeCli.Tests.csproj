@@ -14,5 +14,6 @@
          the standalone executable tests still move and run the native file alone. -->
     <Compile Include="../../src/Core/**/*.cs" Exclude="../../src/Core/**/bin/**;../../src/Core/**/obj/**" />
     <Compile Include="../../src/Cli/PreparedPrompt.cs;../../src/Cli/PromptOutput.cs;../../src/Cli/PromptOptions.cs;../../src/Cli/ShellFieldReader.cs" />
+    <Compile Include="../../src/Cli/BlockSpec.cs;../../src/Cli/BlockConfigurationJson.cs;../../src/Cli/CliBlock.cs" />
   </ItemGroup>
 </Project>

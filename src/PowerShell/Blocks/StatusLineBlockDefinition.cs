@@ -21,7 +21,7 @@ public sealed class StatusLineBlockDefinition : IDisposable {
 
     internal (long Version, DefinitionAppearance Appearance) CaptureAppearance() {
         lock (gate) {
-            return (appearanceVersion, new(Foreground, Background, Alignment, Padding, Icon, Bold, Italic, Underline));
+            return (appearanceVersion, new(Foreground, Background, Alignment, Padding, Icon, Bold, Italic, Underline, Priority));
         }
     }
     internal StatusLineBlockDefinition(string name, string scriptText, TimeSpan interval, StatusLineBlockKind? kind = null,
@@ -35,6 +35,45 @@ public sealed class StatusLineBlockDefinition : IDisposable {
 
     public string Name { get; }
     public StatusLineBlockKind? Kind { get; }
+    public int MinimumWidth {
+        get;
+        set { ArgumentOutOfRangeException.ThrowIfNegative(value); SetAppearance(ref field, value); }
+    }
+    /// <summary>Zero disables the upper width limit.</summary>
+    public int MaximumWidth {
+        get;
+        set { ArgumentOutOfRangeException.ThrowIfNegative(value); SetAppearance(ref field, value); }
+    }
+    public int Priority { get; set => SetAppearance(ref field, value); }
+    public int MinimumDurationMilliseconds {
+        get;
+        set { ArgumentOutOfRangeException.ThrowIfNegative(value); SetAppearance(ref field, value); }
+    }
+    public bool SshOnly { get; set => SetAppearance(ref field, value); }
+    public bool Detailed { get; set => SetAppearance(ref field, value); }
+    private string[] detectFiles = [];
+    public string[] DetectFiles {
+        get { lock (gate) { return [.. detectFiles]; } }
+        set {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.Any(name => string.IsNullOrEmpty(name) || Path.GetFileName(name) != name || name is "." or "..")) {
+                throw new ArgumentException("DetectFiles accepts file names in the current directory.");
+            }
+            lock (gate) { detectFiles = [.. value]; }
+        }
+    }
+
+    internal bool IsVisible(BlockContext context, int width) {
+        lock (gate) {
+            return width >= MinimumWidth && (MaximumWidth == 0 || width <= MaximumWidth) &&
+                (MinimumDurationMilliseconds == 0 || context.State.LastDuration?.TotalMilliseconds >= MinimumDurationMilliseconds) &&
+                (!SshOnly || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SSH_CONNECTION")) ||
+                    !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SSH_CLIENT")) ||
+                    !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SSH_TTY"))) &&
+                (detectFiles.Length == 0 || context.State.FileSystemPath is { } path &&
+                    detectFiles.Any(name => File.Exists(Path.Combine(path, name))));
+        }
+    }
     public string? Padding { get; set => SetAppearance(ref field, value); }
     internal StatusLineAlignment EffectiveAlignment => Alignment ??
         (Kind is { } kind ? BlockCatalog.Get(kind).Metadata.Alignment : StatusLineAlignment.Right);

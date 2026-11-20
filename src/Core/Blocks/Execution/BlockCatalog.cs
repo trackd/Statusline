@@ -28,6 +28,7 @@ internal static class BlockCatalog {
         new ElevationBlock(),
         new ErrorsBlock(),
         new GitBlock(),
+        new GitDetailedBlock(),
         new GoBlock(),
         new HistoryIdBlock(),
         new HostBlock(),
@@ -50,6 +51,10 @@ internal static class BlockCatalog {
         new SystemMemoryBlock(),
         new UptimeBlock(),
         new UserBlock(),
+        new UserHostBlock(),
+        new JobsBlock(),
+        new RunningCommandBlock(),
+        new ViModeBlock(),
         new VirtualEnvBlock(),
         new WeatherBlock(),
         ];

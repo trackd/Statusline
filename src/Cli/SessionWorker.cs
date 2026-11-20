@@ -2,10 +2,11 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text;
 
 namespace StatusLine.Cli;
 
-internal sealed class SessionWorker {
+internal sealed class SessionWorker : IDisposable {
     private readonly string session;
     private readonly int parentPid;
     private readonly string? config;
@@ -15,7 +16,10 @@ internal sealed class SessionWorker {
     private readonly PromptOptions lineOptions;
     private readonly PreparedPrompt prompt;
     private readonly PreparedPrompt statusLine;
-    private readonly string transientSymbol;
+    private readonly PreparedPrompt transientPrompt;
+    private string? runningCommand;
+    private DateTimeOffset? commandStarted;
+    private int jobCount;
     private long generation;
     private readonly string environmentKey;
     private readonly string configKey;
@@ -28,6 +32,11 @@ internal sealed class SessionWorker {
     private readonly bool shellPipes;
     private string? shellInput;
     private string? shellOutput;
+    private SessionRequest? editorSnapshot;
+    private string? previousEditorFrame;
+    private long previousEditorRevision = -1;
+    private StreamWriter? shellWriter;
+    private readonly SemaphoreSlim shellWriteGate = new(1, 1);
 
     internal SessionWorker(string session, int parentPid, string? config, string? statusFile, bool shellPipes = false) {
         if (shellPipes && !OperatingSystem.IsLinux()) { throw new ArgumentException("Shell pipe channels currently require Linux."); }
@@ -58,10 +67,14 @@ internal sealed class SessionWorker {
         configKey = SessionProtocol.ConfigKey(config);
         prompt = new(options);
         statusLine = new(lineOptions);
-        transientSymbol = TerminalText.Sanitize(options.TransientSymbol, false);
+        transientPrompt = new(options.TransientView());
     }
 
     internal int Run(bool standardInput = false) {
+        // The worker may share the shell's process group during interactive editing.
+        // Ctrl+C cancels input or the foreground command, not this session service.
+        using PosixSignalRegistration? interrupt = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGINT, static context => context.Cancel = true);
+        using PosixSignalRegistration? quit = OperatingSystem.IsWindows() ? null : PosixSignalRegistration.Create(PosixSignal.SIGQUIT, static context => context.Cancel = true);
         using var parent = Process.GetProcessById(parentPid);
         using HostWritableOutput? terminal = options.Target == StatusLineTarget.HostWritable ? new HostWritableOutput() : null;
         hostOutput = terminal;
@@ -144,6 +157,7 @@ internal sealed class SessionWorker {
         using var writer = new StreamWriter(destination, leaveOpen: true) { AutoFlush = true };
         try {
             if (announce) { await writer.WriteAsync(session + "\0").ConfigureAwait(false); }
+            shellWriter = writer;
 
             string[] expectedEnvironment = [.. SessionProtocol.ShellVariables.Select(name => Environment.GetEnvironmentVariable(name) ?? "")];
             while (!lifetime.IsCancellationRequested) {
@@ -163,6 +177,13 @@ internal sealed class SessionWorker {
                 if (request.CommandLine.Length == 0) { request.CommandLine = null; }
 
                 request.ExternalIntegration = (ExternalIntegration)int.Parse((await reader.ReadAsync(timeout.Token).ConfigureAwait(false)).Span, System.Globalization.CultureInfo.InvariantCulture);
+                if (command == "edit") {
+                    request.InputCursor = int.Parse((await reader.ReadAsync(timeout.Token).ConfigureAwait(false)).Span, System.Globalization.CultureInfo.InvariantCulture);
+                    request.InputRevision = long.Parse((await reader.ReadAsync(timeout.Token).ConfigureAwait(false)).Span, System.Globalization.CultureInfo.InvariantCulture);
+                    request.InputMode = await reader.ReadStringAsync(timeout.Token).ConfigureAwait(false);
+                    request.JobCount = int.Parse((await reader.ReadAsync(timeout.Token).ConfigureAwait(false)).Span, System.Globalization.CultureInfo.InvariantCulture);
+                    request.InputCommand = await reader.ReadStringAsync(timeout.Token).ConfigureAwait(false);
+                }
                 bool environmentChanged = false;
                 foreach (string expected in expectedEnvironment) {
                     environmentChanged |= !await reader.MatchesAsync(expected, timeout.Token).ConfigureAwait(false);
@@ -174,15 +195,45 @@ internal sealed class SessionWorker {
                     response = environmentChanged ? new SessionResponse { RestartRequired = true } : Handle(request, cachedPrompt: true);
                 }
 
-                await writer.WriteAsync((response.RestartRequired ? "restart" : response.Error is null ? "ok" : "error") + "\0" +
-                    response.Prelude + "\0" + (response.Error ?? response.Output) + "\0").ConfigureAwait(false);
+                await WriteShellResponse(response, timeout.Token).ConfigureAwait(false);
                 if (response.RestartRequired || command == "stop") { break; }
             }
         }
         catch (Exception exception) when (exception is IOException or OperationCanceledException or ArgumentException or FormatException or OverflowException) {
             if (!lifetime.IsCancellationRequested && exception is not EndOfStreamException) { Console.Error.WriteLine("statusline: " + exception.Message); }
         }
-        finally { lifetime.Cancel(); }
+        finally { shellWriter = null; lifetime.Cancel(); }
+    }
+
+    private async Task WriteShellResponse(SessionResponse response, CancellationToken token) {
+        await shellWriteGate.WaitAsync(token).ConfigureAwait(false);
+        try {
+            if (shellWriter is not { } writer) { return; }
+            string result = response.RestartRequired ? "restart" : response.Error is not null ? "error" : response.InputRevision is not null ? "update" : "ok";
+            string prefix = response.InputRevision?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? response.Prelude;
+            await writer.WriteAsync((result + "\0" + prefix + "\0" + (response.Error ?? response.Output) + "\0").AsMemory(), token).ConfigureAwait(false);
+        }
+        finally { shellWriteGate.Release(); }
+    }
+
+    private static StatusLineState EditorState(SessionRequest request) {
+        string line = request.CommandLine ?? string.Empty;
+        int cursor = 0, characters = 0;
+        foreach (var rune in line.EnumerateRunes()) {
+            if (characters++ >= request.InputCursor) { break; }
+            cursor += rune.Utf16SequenceLength;
+        }
+        return new() { InputLine = line, InputCursor = cursor, InputCommand = request.InputCommand,
+            ViMode = request.InputMode, RunningJobCount = request.JobCount };
+    }
+
+    private string EditorOutput(string text, SessionRequest request) {
+        var profile = ShellIntegrationProfile.ResolveForShell(options.ShellIntegration, request.ExternalIntegration);
+        if (profile.Terminal == "ghostty" && profile.Protocol == ShellIntegration.Osc133) {
+            text = text.Replace("\n", "\n" + Vt.SecondaryPrompt, StringComparison.Ordinal);
+            text = (profile.IsExternal(ExternalIntegration.PromptStart) ? "" : Vt.InputPrompt) + text + profile.CommandStart;
+        }
+        return PromptOutput.ForShell(text, request.Shell);
     }
 
     private SessionResponse Handle(SessionRequest request, bool cachedPrompt = false) {
@@ -200,7 +251,8 @@ internal sealed class SessionWorker {
             RefreshPaused = activity.IsIdle || (executing && !options.UpdateDuringCommand),
         };
         if (request.Command is "ping" or "stop") {
-            response.ProviderErrors = [.. BuiltInRefresh.Diagnostics().Where(entry => entry.IsStale).Select(entry => entry.Name + ": " + entry.LastError)];
+            response.ProviderErrors = [.. BuiltInRefresh.Diagnostics().Where(entry => entry.IsStale).Select(entry => entry.Name + ": " + entry.LastError),
+                .. prompt.Errors, .. statusLine.Errors, .. transientPrompt.Errors];
             return response;
         }
 
@@ -212,17 +264,37 @@ internal sealed class SessionWorker {
         }
 
         Program.ValidateRequest(request);
+        if (request.Command == "edit") {
+            if (!cachedPrompt || request.Shell != "zsh" || request.InputRevision < 0 || request.InputCursor < 0 || request.InputCursor > (request.CommandLine?.Length ?? 0)) {
+                throw new ArgumentException("Invalid editor snapshot or unsupported transport.");
+            }
+            editorSnapshot = request;
+            generation++;
+            jobCount = request.JobCount;
+            if (snapshot is not null) { snapshot.Width = request.Width; }
+            activity.Touch();
+            string rendered = prompt.Render(request.Path, request.Width, request.Status, request.Duration, false, wait: false, editor: EditorState(request));
+            previousEditorFrame = rendered;
+            previousEditorRevision = request.InputRevision;
+            response.InputRevision = request.InputRevision;
+            response.Output = EditorOutput(rendered, request);
+            return response;
+        }
+        if (request.Command is "prompt" or "command-start" or "transient") { editorSnapshot = null; }
         var profile = ShellIntegrationProfile.ResolveForShell(options.ShellIntegration, request.ExternalIntegration);
         if (request.Command == "command-start") {
             generation++;
             activity.Touch();
             executing = true;
+            runningCommand = request.CommandLine;
+            commandStarted = DateTimeOffset.UtcNow;
             response.Output = Program.CommandStart(profile, request.CommandLine);
             return response;
         }
 
         if (request.Command == "transient") {
-            response.Output = PromptOutput.ForShell(transientSymbol + Vt.Reset, request.Shell);
+            SessionRequest current = snapshot ?? request;
+            response.Output = PromptOutput.ForShell(transientPrompt.Render(current.Path, request.Width, current.Status, current.Duration, false, wait: false), request.Shell);
             return response;
         }
 
@@ -233,7 +305,8 @@ internal sealed class SessionWorker {
         if (request.Command == "statusline") {
             SessionRequest current = snapshot ?? request;
             response.Output = PromptOutput.ForShell(statusLine.Render(current.Path, request.Width,
-                current.Status, current.Duration, true, wait: false), request.Shell);
+                current.Status, current.Duration, true, wait: false,
+                editor: editorSnapshot is { } statusEdit ? EditorState(statusEdit) : null), request.Shell);
             return response;
         }
 
@@ -257,6 +330,8 @@ internal sealed class SessionWorker {
             if (executing) { hostOutput?.Invalidate(); }
 
             executing = false;
+            runningCommand = null;
+            commandStarted = null;
         }
 
         response.Output = PromptOutput.ForShell(text, request.Shell);
@@ -274,25 +349,47 @@ internal sealed class SessionWorker {
                 }
 
                 string? fileFrame = null;
+                SessionResponse? editorUpdate = null;
                 long frameGeneration;
                 lock (gate) {
+                    if (snapshot is { } observed && hostOutput is not null && terminalError is null) {
+                        int width = hostOutput.Width(observed.Width);
+                        if (width != observed.Width) {
+                            observed.Width = width;
+                            hostOutput.Invalidate();
+                            activity.Touch();
+                        }
+                    }
                     if (activity.CheckIdle() || (executing && !options.UpdateDuringCommand)) { continue; }
 
                     if (snapshot is not { } current) {
                         continue;
                     }
+                    StatusLineState statusState = (editorSnapshot is { } stateEdit ? EditorState(stateEdit) : new()) with {
+                        RunningCommand = runningCommand, CommandStartedAt = commandStarted, RunningJobCount = jobCount,
+                    };
                     // Warm slow providers without allocating and discarding a prompt frame.
                     prompt.Refresh(current.Path, current.Status, current.Duration);
+                    if (editorSnapshot is { } edit) {
+                        string rendered = prompt.Render(edit.Path, edit.Width, edit.Status, edit.Duration, false, wait: false, editor: EditorState(edit));
+                        if (rendered != previousEditorFrame || edit.InputRevision != previousEditorRevision) {
+                            previousEditorFrame = rendered;
+                            previousEditorRevision = edit.InputRevision;
+                            editorUpdate = new() { InputRevision = edit.InputRevision, Output = EditorOutput(rendered, edit) };
+                        }
+                    }
                     frameGeneration = generation;
                     if (statusFile is not null) {
-                        fileFrame = statusLine.Render(current.Path, current.Width, current.Status, current.Duration, true, wait: false);
+                        fileFrame = statusLine.Render(current.Path, current.Width, current.Status, current.Duration, true, wait: false,
+                            editor: statusState);
                     }
 
                     if (hostOutput is not null && terminalError is null) {
                         try {
                             int width = hostOutput.Width(current.Width);
                             string text = fileFrame is not null && width == current.Width ? fileFrame :
-                                statusLine.Render(current.Path, width, current.Status, current.Duration, true, wait: false);
+                                statusLine.Render(current.Path, width, current.Status, current.Duration, true, wait: false,
+                                    editor: statusState);
                             // Keep the atomic terminal write ordered with command-start and
                             // prompt restoration; only filesystem preparation happens outside gate.
                             hostOutput.Write(text, width);
@@ -300,6 +397,8 @@ internal sealed class SessionWorker {
                         catch (IOException exception) { terminalError = exception.Message; }
                     }
                 }
+
+                if (editorUpdate is not null) { await WriteShellResponse(editorUpdate, lifetime.Token).ConfigureAwait(false); }
 
                 if (statusFile is not null && fileFrame is not null &&
                     (fileFrame != previousFileFrame || fileError is not null || !File.Exists(statusFile))) {
@@ -323,5 +422,12 @@ internal sealed class SessionWorker {
             fileError = exception.Message;
             lifetime.Cancel();
         }
+    }
+
+    public void Dispose() {
+        prompt.Dispose();
+        statusLine.Dispose();
+        transientPrompt.Dispose();
+        shellWriteGate.Dispose();
     }
 }

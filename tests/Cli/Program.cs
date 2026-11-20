@@ -13,6 +13,28 @@ internal static partial class Program {
     private sealed record TestResult(string Name, bool Passed, string? Error);
 
     public static int Main(string[] args) {
+        if (args.Length > 0 && args[0] == "--hint-fixture") {
+            using var input = JsonDocument.Parse(Console.In.ReadToEnd());
+            string line = input.RootElement.GetProperty("InputLine").GetString() ?? "";
+            if (args.Length > 1) { File.AppendAllText(args[1], line + "\n"); }
+            if (line.Contains("--fail", StringComparison.Ordinal)) { Console.Error.WriteLine("Hint failure fixture."); return 12; }
+            if (line.Contains("--slow", StringComparison.Ordinal)) { Thread.Sleep(600); }
+            Console.Write("HINT:" + input.RootElement.GetProperty("InputCursor").GetInt32() + ":" + line.Replace("\n", "<newline>", StringComparison.Ordinal));
+            return 0;
+        }
+        if (args is ["--parity-unit-tests"]) { ParityUnitCases(); return ParityReport("cli-parity-unit.json"); }
+        if (args is ["--zsh-hints-test", string hintsBinary]) { binary = Path.GetFullPath(hintsBinary); Case("ZshLiveHintsPreserveInputAndBindings", ZshLiveHints); return ParityReport("cli-zsh-hints.json"); }
+        if (args is ["--parity-integration-tests", string parityBinary]) {
+            binary = Path.GetFullPath(parityBinary);
+            Case("ArgumentAndConfigurationErrors", InvalidInput);
+            Case("SharedGitStatusAndDuration", GitData);
+            Case("PersistentShellTransportAndEnvironmentRestart", PersistentTransport);
+            Case("BashPty", () => Shell("bash"));
+            Case("ZshPtyAndTransient", () => Shell("zsh"));
+            Case("GhosttyCachedPromptRedrawKeepsPromptGrouping", GhosttyRedraw);
+            Case("ZshIdleResizeWakesPausedStatusline", ZshIdleResize);
+            return ParityReport("cli-parity-integration.json");
+        }
         if (args is ["--performance-unit-tests"]) { PerformanceUnitCases(); return failed == 0 ? 0 : 1; }
         if (args is ["--stable-file-test", string stableBinary]) { binary = Path.GetFullPath(stableBinary); Case("UnchangedStatusFilesAreNotRewrittenAndFailuresRetry", StableStatusFile); return failed == 0 ? 0 : 1; }
         if (args is ["--shell-block", string shellBinary]) { binary = Path.GetFullPath(shellBinary); Case("ShellBlockShowsAdapterIdentityAndOmitsUnavailableData", ShellBlock); return failed == 0 ? 0 : 1; }
@@ -739,7 +761,14 @@ internal static partial class Program {
                     if ((attributes & FileAttributes.ReadOnly) != 0) { File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly); }
                 }
             }
-            Directory.Delete(Path, recursive: true);
+            // Timeout diagnostics can precede the cancelled child's final handle cleanup.
+            var cleanup = Stopwatch.StartNew();
+            while (true) {
+                try { Directory.Delete(Path, recursive: true); break; }
+                catch (IOException) when (OperatingSystem.IsWindows() && cleanup.Elapsed < TimeSpan.FromSeconds(2)) {
+                    Thread.Sleep(20);
+                }
+            }
         }
     }
 }
