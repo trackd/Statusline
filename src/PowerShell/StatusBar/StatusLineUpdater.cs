@@ -24,7 +24,8 @@ internal sealed record UpdaterOptions(
     int IdleTimeoutSeconds,
     string? WeatherLocation = null,
     bool BlendBackground = false,
-    TextContrastMode TextContrast = TextContrastMode.Automatic);
+    TextContrastMode TextContrast = TextContrastMode.Automatic,
+    int CompletionMessageThresholdMilliseconds = 0);
 
 /// <summary>
 /// Renders immutable session snapshots on a dedicated thread. Script and built-in I/O
@@ -41,10 +42,80 @@ internal static class StatusLineUpdater {
     private static Guid owner;
     private static UpdaterOptions? liveOptions;
     private static SessionFacts requiredFacts;
+    private sealed record CommandActivity(string Name, DateTimeOffset Started);
+    private sealed record StatusMessage(string Text, long Expires);
+    private static volatile CommandActivity? commandActivity;
+    private static volatile StatusMessage? message;
+
+    internal static void CommandAccepted(Guid runspaceId, string? line) {
+        lock (OutputGate) {
+            if (owner != runspaceId) { return; }
+            commandActivity = string.IsNullOrWhiteSpace(line) ? null :
+                new(line.Trim().Split([' ', '\r', '\n', '\t'], 2)[0], DateTimeOffset.UtcNow);
+        }
+        SetExecuting(runspaceId, !string.IsNullOrWhiteSpace(line));
+    }
+
+    internal static void EditorModeChanged(Guid runspaceId) {
+        lock (OutputGate) {
+            if (owner != runspaceId) { return; }
+            activity.Touch();
+        }
+        Wake();
+    }
+
+    internal static void UpdateJobs(Guid runspaceId, int count) {
+        lock (OutputGate) {
+            if (owner != runspaceId || initialState is not { } state || state.RunningJobCount == count) { return; }
+            initialState = state with { RunningJobCount = count };
+            activity.Touch();
+        }
+        Wake();
+    }
+
+    internal static void ShowMessage(string text, int durationMilliseconds) {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(durationMilliseconds);
+        lock (OutputGate) {
+            if (liveOptions is null || owner != System.Management.Automation.Runspaces.Runspace.DefaultRunspace?.InstanceId) {
+                throw new InvalidOperationException("No running statusline is owned by the calling runspace.");
+            }
+            message = new(text, Environment.TickCount64 + durationMilliseconds);
+            activity.Touch();
+        }
+        Wake();
+    }
+
+    internal static void ClearMessage() {
+        lock (OutputGate) {
+            if (owner != System.Management.Automation.Runspaces.Runspace.DefaultRunspace?.InstanceId) { return; }
+            message = null;
+            activity.Touch();
+        }
+        Wake();
+    }
+
+    internal static void CommandCompleted(Guid runspaceId, int code, TimeSpan? duration) {
+        lock (OutputGate) {
+            if (owner != runspaceId || liveOptions is not { CompletionMessageThresholdMilliseconds: > 0 } options ||
+                duration is not { } elapsed || elapsed.TotalMilliseconds < options.CompletionMessageThresholdMilliseconds) { return; }
+            string result = code == 0 ? "Completed" : $"Failed ({code})";
+            message = new(result + " in " + BlockFormatting.FormatDuration(elapsed), Environment.TickCount64 + 4000);
+            activity.Touch();
+        }
+        Wake();
+    }
 
     internal static SessionFacts RequiredFacts(Guid runspaceId) {
         lock (OutputGate) {
             return owner == runspaceId ? requiredFacts : SessionFacts.None;
+        }
+    }
+    internal static bool NeedsObservation(Guid runspaceId) {
+        lock (OutputGate) {
+            return owner == runspaceId && liveOptions is { } options &&
+                (requiredFacts.HasFlag(SessionFacts.Jobs) || options.Selection.Any(block =>
+                    block.Implementation?.Metadata.Kind == StatusLineBlockKind.ViMode));
         }
     }
     private static StatusBarConfiguration? configuration;
@@ -84,7 +155,7 @@ internal static class StatusLineUpdater {
             }
 
             LastError = null;
-            StatusLineActivity.Install(owner, events, options.Target == StatusLineTarget.HostWritable);
+            StatusLineActivity.Install(owner, events);
             cancellation = new CancellationTokenSource();
             CancellationToken token = cancellation.Token;
             var output = new StatusLineOutput(options, token);
@@ -148,6 +219,7 @@ internal static class StatusLineUpdater {
             }
 
             IsCommandExecuting = value;
+            if (!value) { commandActivity = null; }
             if (value) {
                 // Acceptance and transient redraw are complete; command output may now begin.
                 foregroundOutput = false;
@@ -195,6 +267,12 @@ internal static class StatusLineUpdater {
         Wake();
     }
 
+    // Called under OutputGate when a frame no longer fits the terminal.
+    internal static void RefreshAfterResize() {
+        activity.Touch();
+        Wake();
+    }
+
     internal static void OnExit(Guid runspaceId) {
         lock (Gate) {
             if (owner == runspaceId) {
@@ -238,6 +316,9 @@ internal static class StatusLineUpdater {
         liveOptions = null;
         configuration = null;
         initialState = null;
+        commandActivity = null;
+        message = null;
+        EditorContext.Clear(owner);
         requiredFacts = SessionFacts.None;
         owner = Guid.Empty;
     }
@@ -249,7 +330,7 @@ internal static class StatusLineUpdater {
             bool paused;
             lock (OutputGate) {
                 paused = !IsCommandExecuting &&
-                activity.CheckIdle();
+                activity.CheckIdle() && message is null;
             }
 
             if (paused) {
@@ -277,14 +358,31 @@ internal static class StatusLineUpdater {
     internal static bool IsLive(UpdaterOptions options) => ReferenceEquals(options, liveOptions);
 
     internal static bool CanDrawHost(UpdaterOptions options, CancellationToken token) =>
-        !token.IsCancellationRequested && !foregroundOutput && !activity.IsIdle && (!IsCommandExecuting || options.UpdateDuringCommand);
+        !token.IsCancellationRequested && !foregroundOutput && (!activity.IsIdle || message is not null) && (!IsCommandExecuting || options.UpdateDuringCommand);
 
     internal static void ReportError(string? error) =>
         LastError = error;
 
     private static List<StatusLineBlock> CreateBlocks(UpdaterOptions options) {
+        if (message is { } current) {
+            if (Environment.TickCount64 < current.Expires) {
+                return [new StatusLineBlock(current.Text, Color.White, Color.Empty)];
+            }
+            lock (OutputGate) {
+                if (ReferenceEquals(message, current)) {
+                    message = null;
+                    activity.Touch();
+                }
+            }
+        }
+        EditorContext? editor = EditorContext.Get(options.RunspaceId);
+        CommandActivity? running = commandActivity;
         var context = new BlockContext {
-            State = initialState!,
+            State = initialState! with {
+                ViMode = editor?.ViMode,
+                RunningCommand = running?.Name,
+                CommandStartedAt = running?.Started,
+            },
             PowerShellVersion = options.PowerShellVersion,
             IconSet = options.IconSet,
             SlowProviderWait = TimeSpan.Zero,

@@ -16,6 +16,8 @@ internal sealed partial record BlockContext {
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
     public string? WeatherLocation { get; init; }
     public string? DirectorySeparator { get; init; }
+    public int? Width { get; init; }
+    public bool DetailedGit { get; init; }
 }
 
 /// <summary>Caller-supplied replacements for each kind's default layout and colors.</summary>

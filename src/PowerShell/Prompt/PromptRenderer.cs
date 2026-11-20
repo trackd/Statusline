@@ -8,13 +8,14 @@ internal static class PromptRenderer {
 
     public static string Render(PromptLayout layout, BlockContext context, int width, bool transient, bool includeTransientBlocks = true) {
         PromptConfiguration configuration = layout.Configuration;
-        if (context.BlockTimeoutMilliseconds != configuration.BlockTimeoutMilliseconds ||
+        if (context.Width != width || context.BlockTimeoutMilliseconds != configuration.BlockTimeoutMilliseconds ||
             context.WeatherLocation != configuration.WeatherLocation ||
             context.DirectorySeparator != configuration.DirectorySeparator) {
             context = context with {
                 BlockTimeoutMilliseconds = configuration.BlockTimeoutMilliseconds,
                 WeatherLocation = configuration.WeatherLocation,
-                DirectorySeparator = configuration.DirectorySeparator
+                DirectorySeparator = configuration.DirectorySeparator,
+                Width = width,
             };
         }
 

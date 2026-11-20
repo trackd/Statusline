@@ -58,6 +58,25 @@ public sealed class NewStatusLineBlockCommand : PSCmdlet {
     [AllowEmptyString]
     public string? Padding { get; set; }
 
+    [Parameter]
+    [ValidateRange(0, 32767)]
+    public int MinimumWidth { get; set; }
+    [Parameter]
+    [ValidateRange(0, 32767)]
+    public int MaximumWidth { get; set; }
+    [Parameter]
+    public int Priority { get; set; }
+    [Parameter]
+    [ValidateRange(0, int.MaxValue)]
+    public int MinimumDurationMilliseconds { get; set; }
+    [Parameter]
+    public SwitchParameter SshOnly { get; set; }
+    [Parameter]
+    public SwitchParameter Detailed { get; set; }
+    [Parameter]
+    [ValidateNotNullOrEmpty]
+    public string[] DetectFiles { get; set; } = [];
+
     protected override void EndProcessing() {
         // The script is re-parsed in the background runspace pool; it cannot see this session's variables.
         string name = Name;
@@ -75,6 +94,13 @@ public sealed class NewStatusLineBlockCommand : PSCmdlet {
             Bold = MyInvocation.BoundParameters.ContainsKey(nameof(Bold)) ? Bold.IsPresent : null,
             Italic = MyInvocation.BoundParameters.ContainsKey(nameof(Italic)) ? Italic.IsPresent : null,
             Underline = MyInvocation.BoundParameters.ContainsKey(nameof(Underline)) ? Underline.IsPresent : null,
+            MinimumWidth = MinimumWidth,
+            MaximumWidth = MaximumWidth,
+            Priority = Priority,
+            MinimumDurationMilliseconds = MinimumDurationMilliseconds,
+            SshOnly = SshOnly.IsPresent,
+            Detailed = Detailed.IsPresent,
+            DetectFiles = DetectFiles,
         };
         WriteObject(block);
     }

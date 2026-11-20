@@ -3,12 +3,16 @@ using System.Diagnostics;
 namespace StatusLine.Utility;
 
 internal static class ProcessRunner {
-    public static async Task<(int ExitCode, string Output, string Error)> RunAsync(ProcessStartInfo start, CancellationToken token) {
+    public static Task<(int ExitCode, string Output, string Error)> RunAsync(ProcessStartInfo start, CancellationToken token) =>
+        RunAsync(start, null, token);
+
+    internal static async Task<(int ExitCode, string Output, string Error)> RunAsync(ProcessStartInfo start, string? standardInput, CancellationToken token) {
         token.ThrowIfCancellationRequested();
         start.UseShellExecute = false;
         start.CreateNoWindow = true;
         start.RedirectStandardOutput = true;
         start.RedirectStandardError = true;
+        start.RedirectStandardInput = standardInput is not null;
 #if NET11_0_OR_GREATER
         if (OperatingSystem.IsLinux() || OperatingSystem.IsWindows()) { start.KillOnParentExit = true; }
 #endif
@@ -17,6 +21,10 @@ internal static class ProcessRunner {
         Task<string> output = process.StandardOutput.ReadToEndAsync(token);
         Task<string> error = process.StandardError.ReadToEndAsync(token);
         try {
+            if (standardInput is not null) {
+                await process.StandardInput.WriteAsync(standardInput.AsMemory(), token).ConfigureAwait(false);
+                process.StandardInput.Close();
+            }
             await process.WaitForExitAsync(token).ConfigureAwait(false);
             return (process.ExitCode, await output.ConfigureAwait(false), await error.ConfigureAwait(false));
         }

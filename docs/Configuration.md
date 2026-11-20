@@ -319,7 +319,7 @@ changes the working directory reported to the terminal.
 
 | Kind | Data |
 | --- | --- |
-| Directory, Git | Location; branch, ahead/behind and working-tree counts |
+| Directory, Git, GitDetailed | Location; compact or detailed branch and working-tree status |
 | Status, Duration, HistoryId | Last command status; last command duration; prompt history ID |
 | SystemMemory | Used/total physical memory in GiB and percentage |
 | ProcessMemory | Current PowerShell process working set in MiB |
@@ -328,7 +328,8 @@ changes the working directory reported to the terminal.
 | Battery, Weather | Charge and charging state; weather from wttr.in |
 | Errors, StackCount, NestedPrompt, Runspaces | Retained `$Error` records, location stack depth, nested prompt depth, process runspaces |
 | Shell | Shell name and version; `pwsh` in the module, or Bash/Zsh/Fish in the CLI |
-| PowerShell, User, Host, Os, Elevation | Session, platform and privilege information |
+| PowerShell, User, Host, UserHost, Os, Elevation | Session, platform and privilege information; UserHost combines username@hostname |
+| Jobs, RunningCommand, ViMode | Active PowerShell job count; current command and elapsed time; Vi NORMAL/INSERT mode |
 | Clock, Date, Uptime | Local time, date and system uptime |
 | Node, Python, Dotnet, Go, Rust, Java, Ruby | Runtime versions for the current project |
 | Package, VirtualEnv | package.json version; Python or Conda environment |
@@ -338,8 +339,7 @@ changes the working directory reported to the terminal.
 Blocks with nothing to show are omitted, and zero counts are hidden. Errors counts `$Error`
 until you clear it. Network needs two samples before it reports a rate.
 
-- **Duration** formats as `9ms`, `2.5s` or `1m15s`. `-DurationWarning` adds a red warning after
-  Duration when the last command failed.
+- **Duration** formats as `9ms`, `2.5s` or `1m15s`.
 - **HistoryId** shows `{{F060D}}` and the history ID of the prompt being drawn.
 - **Os** shows the installed release, such as `Windows 11 26H2` or `Debian GNU/Linux 13 (trixie)`.
 - **Weather** is opt-in and requests data from wttr.in. `-WeatherLocation` chooses the location;
@@ -353,6 +353,57 @@ until you clear it. Network needs two samples before it reports a rate.
 Runtime and toolchain blocks are cached per project directory. Git refreshes every two seconds,
 system metrics every second, runtime versions every ten seconds and weather every fifteen minutes.
 Prompts never wait for providers, so a first render may omit a value that is still loading.
+
+## Responsive blocks
+
+Use `GitDetailed` wherever you would use `Git`. Command hints are available in the native CLI; the PowerShell module leaves input assistance to PSReadLine and shell completion.
+
+Reusable definitions support `MinimumWidth`, `MaximumWidth` (zero means unlimited),
+`Priority` (higher survives longer when the row is crowded), `MinimumDurationMilliseconds`,
+`SshOnly`, and `DetectFiles`. Conditions combine: every configured condition
+must pass. DetectFiles matches any named file in the current directory. Width limits are inclusive. Paths still abbreviate before
+whole blocks are dropped; equal priorities retain the normal group and directory preferences.
+
+```powershell
+$identity = New-StatusLineBlock -Kind UserHost -Priority 10
+$weather = New-StatusLineBlock -Kind Weather -MinimumWidth 120 -Priority -10
+$duration = New-StatusLineBlock -Kind Duration -MinimumDurationMilliseconds 1000
+$package = New-StatusLineBlock -Kind Package -DetectFiles package.json
+$remote = New-StatusLineBlock -Kind UserHost -SshOnly
+
+Enable-Prompt -Left @('Directory', $duration) -Right GitDetailed
+Enable-StatusLine -Left @($identity, $package) -Right @($weather, 'Jobs', 'ViMode', 'Clock')
+```
+
+A terminal width change requests a foreground prompt repaint and discards a queued status frame rendered for the previous width.
+
+`Git -Detailed` separates working-tree and index additions, modifications, deletions and renames.
+Untracked files count as working-tree additions. Conflicts, ahead/behind, stash count and active
+rebase/merge/cherry-pick/revert/bisect state appear when present. Compact Git output remains the
+default. Status and stash counts share one `git status --porcelain=v2 --branch --show-stash` call;
+the remote-provider logo retains its independent cache.
+
+`Jobs` counts running, blocked and suspended PowerShell jobs. `ViMode` appears only in PSReadLine
+Vi mode. Prompt job counts are snapshots at prompt time; status-row counts update on idle.
+Use `RunningCommand` in a statusline with `-UpdateDuringCommand` to show its elapsed time during
+execution. That block clears when the next prompt begins. These editor/job/command facts are
+supplied by the PowerShell module.
+
+## Temporary status messages
+
+```powershell
+[StatusLine.StatusBar]::ShowMessage('Deployment complete', 4000)
+[StatusLine.StatusBar]::ClearMessage()
+
+# Opt in to a four-second completion/failure message after commands lasting two seconds.
+Enable-StatusLine -Left UserHost -Right Clock -CompletionMessageThresholdMilliseconds 2000
+Enable-Prompt
+```
+
+Messages temporarily replace the status row and restore its configured blocks on expiry or
+ClearMessage. A newer message replaces the previous one. Duration must be positive; the default
+is 4,000 milliseconds. Automatic completion messages are disabled by default (threshold zero)
+and use command duration/status supplied by Enable-Prompt. They do not send desktop notifications.
 
 ## Custom Refreshing Blocks
 

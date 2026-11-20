@@ -10,7 +10,8 @@ internal enum SessionFacts {
     Runspaces = 8,
     Location = 16,
     ExitCode = 32,
-    All = Errors | Stack | NestedPrompt | Runspaces | Location | ExitCode,
+    Jobs = 64,
+    All = Errors | Stack | NestedPrompt | Runspaces | Location | ExitCode | Jobs,
 }
 
 internal sealed record BlockMetadata(StatusLineBlockKind Kind, StatusLineAlignment Alignment,

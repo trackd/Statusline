@@ -11,6 +11,8 @@ if [[ -z ${_statusline_loaded-} ]]; then
     autoload -Uz add-zsh-hook
     typeset -ga _statusline_environment=(__STATUSLINE_ENVIRONMENT__)
     typeset -g _statusline_input='' _statusline_output='' _statusline_reply='' _statusline_frame=' > '
+    typeset -gi _statusline_edit_fd=-1 _statusline_write_fd=-1 _statusline_edit_revision=0 _statusline_edit_active=0 _statusline_edit_waiting=0
+    typeset -g _statusline_edit_line='' _statusline_edit_cursor=-1 _statusline_edit_width=-1 _statusline_edit_mode='' _statusline_edit_jobs=-1
     _statusline_ownership() {
         _statusline_external=0
         if (( $+functions[precmd_hook_contour] )) && [[ " ${precmd_functions[*]-} " == *' precmd_hook_contour '* ]]; then
@@ -25,11 +27,18 @@ if [[ -z ${_statusline_loaded-} ]]; then
         [[ -z $_statusline_config ]] || options+=(--config "$_statusline_config")
         [[ -z $_statusline_status_file ]] || options+=(--status-file "$_statusline_status_file")
         if [[ __STATUSLINE_CHANNEL__ == 1 ]]; then
+            if (( _statusline_edit_fd >= 0 )); then
+                zle -F $_statusline_edit_fd 2>/dev/null
+                exec {_statusline_edit_fd}<&-
+                exec {_statusline_write_fd}>&-
+            fi
             candidate=("${(@f)$("$_statusline_executable" channel "${options[@]}")}")
             [[ $? == 0 && ${#candidate} == 3 && ${candidate[1]} =~ ^[0-9a-fA-F]{32}$ ]] || return 1
             _statusline_session=$candidate[1]
             _statusline_input=$candidate[2]
             _statusline_output=$candidate[3]
+            exec {_statusline_write_fd}>"$_statusline_input" || return 1
+            exec {_statusline_edit_fd}<"$_statusline_output" || return 1
         else
             _statusline_session=$("$_statusline_executable" start "${options[@]}") &&
                 [[ $_statusline_session =~ ^[0-9a-fA-F]{32}$ ]] || return 1
@@ -57,6 +66,7 @@ if [[ -z ${_statusline_loaded-} ]]; then
 
         _statusline_call() {
             local command=$1
+            if (( _statusline_edit_fd >= 0 )); then zle -F $_statusline_edit_fd 2>/dev/null; fi
             _statusline_prefix=''
             shift
             _statusline_ownership
@@ -66,10 +76,13 @@ if [[ -z ${_statusline_loaded-} ]]; then
                 {
                     printf '%s\0' "$command" "$PWD" "${COLUMNS:-120}" "$_statusline_status" "$_statusline_duration" zsh "$text" "$_statusline_external"
                     for name in "${_statusline_environment[@]}"; do printf '%s\0' "${(P)name}"; done
-                } 2>/dev/null >"$_statusline_input" || return 1
+                } 2>/dev/null >&$_statusline_write_fd || return 1
                 {
-                    IFS= read -r -d '' -t 3 result && IFS= read -r -d '' -t 3 _statusline_prefix && IFS= read -r -d '' -t 3 _statusline_reply
-                } 2>/dev/null <"$_statusline_output" || return 1
+                    while true; do
+                        IFS= read -r -d '' -t 3 result && IFS= read -r -d '' -t 3 _statusline_prefix && IFS= read -r -d '' -t 3 _statusline_reply || return 1
+                        [[ $result == update ]] || break
+                    done
+                } 2>/dev/null <&$_statusline_edit_fd || return 1
                 [[ $result == ok ]]
                 return $?
             fi
@@ -83,6 +96,89 @@ if [[ -z ${_statusline_loaded-} ]]; then
             _statusline_prefix=''
             _statusline_reply=$("$_statusline_executable" "$command" "${options[@]}" "$@")
         }
+
+        # ZLE owns input and redisplay. The worker only reads private request pipes.
+        # No editor keys are rebound, and collection never blocks the redraw hook.
+        if (( _statusline_edit_fd >= 0 )); then
+            autoload -Uz add-zle-hook-widget
+            zmodload zsh/parameter
+            typeset -g _statusline_main_keymap="$(bindkey -lL main)"
+
+            _statusline_edit_reply() {
+                local result revision frame
+                if ! { IFS= read -r -d '' -t 1 -u $_statusline_edit_fd result &&
+                    IFS= read -r -d '' -t 1 -u $_statusline_edit_fd revision &&
+                    IFS= read -r -d '' -t 1 -u $_statusline_edit_fd frame; }; then
+                    _statusline_edit_finish
+                    return
+                fi
+                if [[ $result == update && $revision == $_statusline_edit_revision ]] && (( _statusline_edit_active )); then
+                    _statusline_edit_waiting=0
+                    if [[ "$PREBUFFER$BUFFER" == "$_statusline_edit_line" && $(( $#PREBUFFER + CURSOR )) == $_statusline_edit_cursor &&
+                        $COLUMNS == $_statusline_edit_width && $_statusline_frame != "$frame" ]]; then
+                        _statusline_frame=$frame
+                        PROMPT='${_statusline_frame}'
+                        zle .reset-prompt
+                    fi
+                    _statusline_edit_send
+                elif [[ $result == restart || $result == error ]]; then
+                    zle -F $_statusline_edit_fd
+                    _statusline_edit_active=0
+                fi
+            }
+
+            _statusline_edit_send() {
+                (( _statusline_edit_active )) || return
+                (( _statusline_edit_waiting )) && return
+                local line="$PREBUFFER$BUFFER" mode='' name token command='' expect=1
+                local -i cursor=$(( $#PREBUFFER + CURSOR )) jobs=$#jobstates
+                [[ $KEYMAP == vicmd ]] && mode=NORMAL
+                [[ $KEYMAP == viins || $KEYMAP == main && $_statusline_main_keymap == *viins* ]] && mode=INSERT
+                if [[ $line == "$_statusline_edit_line" && $cursor == $_statusline_edit_cursor &&
+                    $COLUMNS == $_statusline_edit_width && $mode == "$_statusline_edit_mode" && $jobs == $_statusline_edit_jobs ]]; then return; fi
+                _statusline_edit_line=$line _statusline_edit_cursor=$cursor _statusline_edit_width=$COLUMNS _statusline_edit_mode=$mode _statusline_edit_jobs=$jobs
+                (( ++_statusline_edit_revision ))
+                _statusline_edit_waiting=1
+                if (( $#line <= 32768 )); then
+                    local prefix="$PREBUFFER$LBUFFER"
+                    for token in ${(z)prefix}; do
+                        if [[ $token == '|' || $token == '||' || $token == '&&' || $token == ';' || $token == '&' || $token == $'\n' ]]; then
+                            command='' expect=1
+                        elif (( expect )) && [[ $token != *=* ]]; then
+                            command=${(Q)token}
+                            expect=0
+                        fi
+                    done
+                    local -i depth=0
+                    while [[ -n $command && -n ${aliases[$command]-} ]] && (( depth++ < 8 )); do
+                        local -a expanded
+                        expanded=(${(z)aliases[$command]})
+                        command=${(Q)expanded[1]}
+                    done
+                    command=${command:t}
+                fi
+                {
+                    printf '%s\0' edit "$PWD" "${COLUMNS:-120}" "$_statusline_status" "$_statusline_duration" zsh "$line" "$_statusline_external" "$cursor" "$_statusline_edit_revision" "$mode" "$jobs" "$command"
+                    for name in "${_statusline_environment[@]}"; do printf '%s\0' "${(P)name}"; done
+                } >&$_statusline_write_fd 2>/dev/null || _statusline_edit_finish
+                return 0
+            }
+            _statusline_edit_start() {
+                _statusline_edit_active=1
+                _statusline_edit_waiting=0
+                _statusline_edit_cursor=-1
+                zle -F -w $_statusline_edit_fd _statusline_edit_reply
+                _statusline_edit_send
+            }
+            _statusline_edit_finish() {
+                _statusline_edit_active=0
+                zle -F $_statusline_edit_fd
+            }
+            add-zle-hook-widget line-init _statusline_edit_start
+            zle -N _statusline_edit_reply
+            add-zle-hook-widget line-pre-redraw _statusline_edit_send
+            add-zle-hook-widget line-finish _statusline_edit_finish
+        fi
 
         _statusline_refresh() {
             if ! _statusline_call prompt; then

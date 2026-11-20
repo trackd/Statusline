@@ -22,6 +22,8 @@ public sealed record StatusBarConfiguration {
     public int BlockTimeoutMilliseconds { get; init; } = 2000;
     public int IdleTimeoutSeconds { get; init; } = 60;
     public bool UpdateDuringCommand { get; init; }
+    /// <summary>Zero disables automatic four-second completion messages.</summary>
+    public int CompletionMessageThresholdMilliseconds { get; init; }
     public StatusLineTarget Target { get; init; }
     public string OutputPath { get; init; } = string.Empty;
 
@@ -54,6 +56,7 @@ public sealed record StatusBarConfiguration {
             BlockTimeoutMilliseconds = BlockTimeoutMilliseconds,
             IdleTimeoutSeconds = IdleTimeoutSeconds,
             UpdateDuringCommand = UpdateDuringCommand,
+            CompletionMessageThresholdMilliseconds = CompletionMessageThresholdMilliseconds,
         };
     }
 
@@ -74,6 +77,7 @@ public sealed record StatusBarConfiguration {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(BlockTimeoutMilliseconds, 60000);
         ArgumentOutOfRangeException.ThrowIfLessThan(IdleTimeoutSeconds, 0);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(IdleTimeoutSeconds, 86400);
+        ArgumentOutOfRangeException.ThrowIfNegative(CompletionMessageThresholdMilliseconds);
         Color start = BlockSnapshots.ColorValue(StartColor), end = BlockSnapshots.ColorValue(EndColor);
         BlockGradient.Validate(start, end);
         return (start, end);
@@ -112,6 +116,7 @@ public sealed record StatusBarConfiguration {
             BlockTimeoutMilliseconds = options.BlockTimeoutMilliseconds,
             IdleTimeoutSeconds = options.IdleTimeoutSeconds,
             UpdateDuringCommand = options.UpdateDuringCommand,
+            CompletionMessageThresholdMilliseconds = options.CompletionMessageThresholdMilliseconds,
             Target = options.Target,
             OutputPath = options.OutputPath,
         };

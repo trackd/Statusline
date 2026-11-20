@@ -25,6 +25,10 @@ public sealed class PromptSession {
     private bool transientMarks;
     private string? transientPrompt;
     private int? drawnRows;
+    private int drawnWidth;
+    private bool resizing;
+    private bool reading;
+    private string? viMode;
     private volatile StatusLineState snapshot = new();
 
     private PromptSession(PromptConfiguration configuration, string? version, SessionState sessionState) {
@@ -58,7 +62,13 @@ public sealed class PromptSession {
     internal static bool IsEnabled(Guid owner) => Sessions.ContainsKey(owner);
 
     // The owner has closed: release captured SessionState/closures without executing its shell.
-    internal static void ReleaseOwner(Guid owner) => Sessions.TryRemove(owner, out _);
+    internal static void ReleaseOwner(Guid owner) {
+        if (Sessions.TryRemove(owner, out PromptSession? session) &&
+            session.installation?.Properties["ResizeTimer"]?.Value is System.Timers.Timer timer) {
+            timer.Dispose();
+        }
+        EditorContext.Clear(owner);
+    }
 
     internal static void Configure(PromptConfiguration configuration) {
         ArgumentNullException.ThrowIfNull(configuration);
@@ -80,6 +90,43 @@ public sealed class PromptSession {
     /// <summary>Used by the existing reader wrapper so transient mode can change without reinstalling it.</summary>
     public static bool IsTransientEnabled(Runspace runspace) =>
         Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session) && session.layout.Configuration.Transient;
+
+    /// <summary>Checks for a width change on the foreground reader's idle event.</summary>
+    public static bool BeginResize(Runspace runspace) {
+        if (!Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session) || !session.reading || session.transient ||
+            session.drawnWidth == 0) {
+            return false;
+        }
+        int width = Terminal.Width;
+        string? mode = EditorContext.Get(runspace.InstanceId)?.ViMode;
+        if (session.drawnWidth == width && session.viMode == mode) {
+            return false;
+        }
+        session.resizing = true;
+        return true;
+    }
+
+    /// <summary>Tracks whether the original reader currently owns input.</summary>
+    public static void SetReading(Runspace runspace, bool value) {
+        if (Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
+            session.reading = value;
+            if (session.installation?.Properties["ResizeTimer"]?.Value is System.Timers.Timer timer) {
+                if (value) { timer.Start(); }
+                else { timer.Stop(); }
+            }
+        }
+    }
+
+    internal static bool NeedsEditorContext(Guid owner) => Sessions.TryGetValue(owner, out PromptSession? session) &&
+        session.layout.Left.Concat(session.layout.Right).Concat(session.layout.Input).Concat(session.layout.AdditionalBlocks)
+            .Any(block => block.Implementation?.Metadata.Kind == StatusLineBlockKind.ViMode);
+
+    /// <summary>Ends an idle prompt repaint.</summary>
+    public static void EndResize(Runspace runspace) {
+        if (Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
+            session.resizing = false;
+        }
+    }
     internal static ShellIntegrationFeatures IntegrationFeatures() {
         if (Runspace.DefaultRunspace is not { } runspace || !Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
             return new();
@@ -109,6 +156,7 @@ public sealed class PromptSession {
     }
     /// <summary>Restores the previous prompt and ReadLine function for this runspace.</summary>
     public static void Disable(Runspace runspace) {
+        EditorContext.Clear(runspace.InstanceId);
         if (Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session) && session.installation is not null) {
             string close = session.contourContext?.Close() ?? string.Empty;
             if (session.commandPending && session.layout.Configuration.TerminalProgress) {
@@ -140,6 +188,22 @@ public sealed class PromptSession {
 
     /// <summary>Renders the installed prompt from caller-captured success, location, and history.</summary>
     public static string Render(Runspace runspace, bool success, object? exitCode, PathInfo location, HistoryInfo? history, int? errorCount = null, long? invocationHistoryId = null) {
+        int width = Terminal.Width;
+        if (Sessions.TryGetValue(runspace.InstanceId, out PromptSession? resizingSession) &&
+            (resizingSession.resizing || resizingSession.reading)) {
+            var resizeContext = new BlockContext { State = resizingSession.snapshot, IconSet = resizingSession.layout.Configuration.IconSet,
+                PowerShellVersion = resizingSession.version, SlowProviderWait = TimeSpan.Zero };
+            EditorContext? input = EditorContext.Get(runspace.InstanceId);
+            resizeContext = resizeContext with { RunspaceId = runspace.InstanceId, State = resizeContext.State with {
+                ViMode = input?.ViMode,
+            } };
+            string resized = PromptRenderer.Render(resizingSession.layout, resizeContext, width, transient: false);
+            resizingSession.drawnWidth = width;
+            resizingSession.drawnRows = resizingSession.layout.Rows;
+            resizingSession.viMode = input?.ViMode;
+            resizingSession.transientPrompt = PromptRenderer.Render(resizingSession.layout, resizeContext, width, transient: true);
+            return resized;
+        }
         StatusLineActivity.BeginPrompt(runspace.InstanceId);
         StatusLineActivity.PromptReady(runspace.InstanceId);
         if (!Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session)) {
@@ -147,7 +211,7 @@ public sealed class PromptSession {
         }
 
         if (session.transient) {
-            string compact = session.transientPrompt ?? PromptRenderer.Render(session.layout, new BlockContext(), Terminal.Width, transient: true, includeTransientBlocks: false);
+            string compact = session.transientPrompt ?? PromptRenderer.Render(session.layout, new BlockContext(), width, transient: true, includeTransientBlocks: false);
             if (!session.transientMarks) {
                 return compact;
             }
@@ -184,15 +248,19 @@ public sealed class PromptSession {
             state = state with { LastExitCode = completedCode };
         }
 
+        if (completedCode is { } result) {
+            StatusLineUpdater.CommandCompleted(runspace.InstanceId, result, state.LastDuration);
+        }
         session.commandPending = false;
         session.snapshot = state;
         StatusLineUpdater.UpdateSnapshot(runspace.InstanceId, state);
         StatusLineUpdater.Wake();
         var context = new BlockContext { State = state, IconSet = session.layout.Configuration.IconSet, PowerShellVersion = session.version, SlowProviderWait = TimeSpan.Zero };
-        string prompt = PromptRenderer.Render(session.layout, context, Terminal.Width, transient: false);
+        string prompt = PromptRenderer.Render(session.layout, context, width, transient: false);
         session.drawnRows = session.layout.Rows;
+        session.drawnWidth = width;
         if (session.layout.Configuration.Transient) {
-            session.transientPrompt = PromptRenderer.Render(session.layout, context, Terminal.Width, transient: true);
+            session.transientPrompt = PromptRenderer.Render(session.layout, context, width, transient: true);
         }
 
         // Windows Terminal creates a scrollbar entry at prompt start, even for input that never runs.
@@ -246,10 +314,13 @@ public sealed class PromptSession {
     /// <summary>Returns the cached PSReadLine callback that finishes a deferred repaint, if supported.</summary>
     public static Func<bool>? GetDeferredRepaint(Type editorType) => PSReadLineRepaint.Get(editorType)?.Repaint;
 
+    /// <summary>Whether an idle refresh may repaint the editor's current input.</summary>
+    public static bool CanRefreshPrompt(Type editorType) => PSReadLineRepaint.Get(editorType)?.IsEditing() == true;
+
+
     /// <summary>Uses the editor's saved input row when its character widths cannot be inferred.</summary>
     public static int? GetEditorPromptRow(Runspace runspace, Type editorType, int firstVisibleRow, int endRow) {
         if (!Sessions.TryGetValue(runspace.InstanceId, out PromptSession? session) ||
-            !session.layout.Configuration.Transient ||
             PSReadLineRepaint.Get(editorType)?.GetInitialRow() is not int inputRow) {
             return null;
         }
@@ -344,7 +415,43 @@ public sealed class PromptSession {
         }
         Set-Item function:global:prompt $prompt
         $readLine = $null
+        $resizeSubscription = $null
+        $resizeTimer = $null
         if ($oldReadLine) {
+            if ($finishRepaint -and -not $options.ScreenReaderModeEnabled -and
+                -not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected) {
+                $resizeAction = {
+                    if (-not [StatusLine.PromptSession]::CanRefreshPrompt([Microsoft.PowerShell.PSConsoleReadLine])) {
+                        return
+                    }
+                    $runspace = [System.Management.Automation.Runspaces.Runspace]::DefaultRunspace
+                    if ([StatusLine.StatusLineActivity]::NeedsObservation($runspace.InstanceId)) {
+                        $editorMode = $null
+                        if ((Get-PSReadLineOption).EditMode -eq 'Vi') {
+                            $editorMode = if ([Microsoft.PowerShell.PSConsoleReadLine]::InViCommandMode()) { 'NORMAL' } else { 'INSERT' }
+                        }
+                        [StatusLine.StatusLineActivity]::ObserveEditorMode($runspace.InstanceId, $editorMode, $ExecutionContext.SessionState)
+                    }
+                    if ([StatusLine.PromptSession]::BeginResize($runspace)) {
+                        try {
+                            $row = [StatusLine.PromptSession]::GetEditorPromptRow(
+                                $runspace, [Microsoft.PowerShell.PSConsoleReadLine], [Console]::WindowTop, [Console]::BufferHeight)
+                            if ($null -ne $row) {
+                                [Console]::SetCursorPosition(0, [int]$row)
+                                [Console]::Write("`e[0J")
+                                [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt($null, [int]$row)
+                                $repaint = [StatusLine.PromptSession]::GetDeferredRepaint([Microsoft.PowerShell.PSConsoleReadLine])
+                                if ($repaint) { $null = $repaint.Invoke() }
+                            }
+                        }
+                        catch { }
+                        finally { [StatusLine.PromptSession]::EndResize($runspace) }
+                    }
+                }
+                $resizeTimer = [System.Timers.Timer]::new(300)
+                $resizeSubscription = $ExecutionContext.Events.SubscribeEvent(
+                    $resizeTimer, 'Elapsed', 'StatusLine.PromptRefresh', $null, $resizeAction, $true, $false)
+            }
             $readLine = {
                 $runspace = [System.Management.Automation.Runspaces.Runspace]::DefaultRunspace
                 $transient = [StatusLine.PromptSession]::IsTransientEnabled($runspace)
@@ -359,9 +466,11 @@ public sealed class PromptSession {
                     catch { $position = $null }
                 }
                 try {
+                    [StatusLine.PromptSession]::SetReading($runspace, $true)
                     $line = & $oldReadLine
                 }
                 finally {
+                    [StatusLine.PromptSession]::SetReading($runspace, $false)
                     [StatusLine.StatusLineActivity]::EndReadLine($runspace.InstanceId)
                 }
                 if ($null -ne $position -and $null -ne $line -and [Console]::BufferWidth -eq $width) {
@@ -407,11 +516,18 @@ public sealed class PromptSession {
             }.GetNewClosure()
             Set-Item function:global:PSConsoleHostReadLine $readLine
         }
-        [pscustomobject]@{ OldPrompt = $oldPrompt; Prompt = $prompt; OldReadLine = $oldReadLine; ReadLine = $readLine; Options = $options; OldPromptText = $oldPromptText; EmptyPromptText = $emptyPromptText }
+        [pscustomobject]@{ OldPrompt = $oldPrompt; Prompt = $prompt; OldReadLine = $oldReadLine; ReadLine = $readLine; Options = $options; OldPromptText = $oldPromptText; EmptyPromptText = $emptyPromptText; ResizeSubscription = $resizeSubscription; ResizeTimer = $resizeTimer; Events = $ExecutionContext.Events }
         """;
 
     private const string UninstallScript = """
         param($installation)
+        if ($installation.ResizeTimer) {
+            $installation.ResizeTimer.Stop()
+            $installation.ResizeTimer.Dispose()
+        }
+        if ($installation.ResizeSubscription) {
+            $installation.Events.UnsubscribeEvent($installation.ResizeSubscription)
+        }
         $ownsPrompt = $function:global:prompt -eq $installation.Prompt
         if ($ownsPrompt -and $installation.Options -and
             [object]::ReferenceEquals($installation.Options.PromptText, $installation.EmptyPromptText)) {

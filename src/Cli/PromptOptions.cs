@@ -1,9 +1,13 @@
 namespace StatusLine.Cli;
 
 internal sealed class PromptOptions {
-    public string[] Left { get; set; } = ["Directory", "Git", "Status", "Duration"];
-    public string[] Right { get; set; } = [];
-    public string[] Center { get; set; } = [];
+    public BlockSpec[] Left { get; set; } = ["Directory", "Git", "Status", "Duration"];
+    public BlockSpec[] Right { get; set; } = [];
+    public BlockSpec[] Center { get; set; } = [];
+    public BlockSpec[] EnableHints { get; set; } = [];
+    public BlockSpec[] TransientBlock { get; set; } = [];
+    public string? DirectorySeparator { get; set; }
+    public bool ColorSymbolByExitCode { get; set; }
     public SegmentStyle Style { get; set; } = SegmentStyle.Powerline;
     public IconSet IconSet { get; set; } = IconSet.NerdFont;
     public string Padding { get; set; } = " ";
@@ -24,4 +28,11 @@ internal sealed class PromptOptions {
     public string? WeatherLocation { get; set; }
     public int BlockTimeoutMilliseconds { get; set; } = 2000;
     public DirectoryDisplayStyle DirectoryStyle { get; set; } = DirectoryDisplayStyle.Home;
+
+    internal PromptOptions TransientView() => new() {
+        Left = TransientBlock, Symbol = TransientSymbol, IconSet = IconSet, Style = Style, Padding = Padding,
+        StartColor = StartColor, EndColor = EndColor, BlockSeparator = BlockSeparator, BlendBackground = BlendBackground,
+        TextContrast = TextContrast, DirectoryStyle = DirectoryStyle, DirectorySeparator = DirectorySeparator,
+        ColorSymbolByExitCode = ColorSymbolByExitCode, WeatherLocation = WeatherLocation, BlockTimeoutMilliseconds = BlockTimeoutMilliseconds,
+    };
 }

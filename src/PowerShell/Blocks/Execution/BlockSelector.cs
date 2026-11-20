@@ -17,6 +17,9 @@ internal readonly record struct BlockSelector(StatusLineBlockKind? Kind, StatusL
                 }
 
                 required |= selector.Implementation?.Metadata.Facts ?? SessionFacts.None;
+                if (selector.Definition?.DetectFiles.Length > 0) {
+                    required |= SessionFacts.Location;
+                }
             }
         }
 

@@ -23,11 +23,18 @@ public sealed partial record StatusLineState {
                 RunspaceCount = facts.HasFlag(SessionFacts.Runspaces) ? LocalRunspaces?.Invoke().Count ?? 0 : 0,
                 FileSystemPath = location?.Provider.Name == "FileSystem" ? location.ProviderPath : null,
                 LastExitCode = facts.HasFlag(SessionFacts.ExitCode) && sessionState.PSVariable.GetValue("global:LASTEXITCODE") is { } raw && LanguagePrimitives.TryConvertTo(raw, out int code) ? code : null,
+                RunningJobCount = facts.HasFlag(SessionFacts.Jobs) ? CountRunningJobs() : 0,
             };
         }
         catch (InvalidOperationException) {
             // The session is mid-change (e.g. switching drives); the next tick will read it again.
             return new StatusLineState();
         }
+    }
+
+    private static int CountRunningJobs() {
+        using var shell = PowerShell.Create(RunspaceMode.CurrentRunspace);
+        return shell.AddCommand("Microsoft.PowerShell.Core\\Get-Job").Invoke<Job>()
+            .Count(job => job.JobStateInfo.State is JobState.Running or JobState.Blocked or JobState.Suspended);
     }
 }

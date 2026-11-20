@@ -5,6 +5,15 @@ namespace StatusLine;
 /// Passed as the first argument to script definition script blocks.
 /// </summary>
 public sealed partial record StatusLineState {
+    public string? InputCommand { get; init; }
+    /// <summary>Unexecuted editor input, including all lines; null outside an active editor snapshot.</summary>
+    public string? InputLine { get; init; }
+    /// <summary>Zero-based UTF-16 offset into InputLine.</summary>
+    public int? InputCursor { get; init; }
+    public string? RunningCommand { get; init; }
+    public DateTimeOffset? CommandStartedAt { get; init; }
+    public int RunningJobCount { get; init; }
+    public string? ViMode { get; init; }
     /// <summary>PowerShell path of the current location, e.g. <c>C:\src</c> or <c>HKLM:\Software</c>.</summary>
     public string? Location { get; init; }
 

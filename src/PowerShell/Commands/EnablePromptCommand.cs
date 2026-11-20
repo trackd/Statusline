@@ -31,6 +31,7 @@ public sealed class EnablePromptCommand : PSCmdlet {
     [ArgumentCompleter(typeof(BlockKindCompleter))]
     public object[]? Input { get; set; }
 
+
     [Parameter]
     public TextContrastMode TextContrast { get; set; }
 

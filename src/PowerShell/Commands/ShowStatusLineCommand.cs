@@ -30,6 +30,7 @@ public sealed class ShowStatusLineCommand : PSCmdlet {
             State = StatusLineState.Capture(SessionState, BlockSelector.RequiredFacts(selection)) with { LastExitCode = ExitCode, LastDuration = Duration },
             PowerShellVersion = CommandHelpers.GetPowerShellVersion(SessionState),
             IconSet = settings.IconSet,
+            Width = Width,
             BlockTimeoutMilliseconds = settings.BlockTimeoutMilliseconds,
             WeatherLocation = settings.WeatherLocation,
             SlowProviderWait = TimeSpan.Zero,

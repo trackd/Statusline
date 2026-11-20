@@ -11,6 +11,7 @@ internal sealed class PSReadLineRepaint {
     private readonly Func<object?> getSingleton;
     private readonly Action<object> finishRepaint;
     private readonly Func<object, int>? initialRow;
+    private readonly Func<object, bool>? isEditing;
     private object? singleton;
 
     private PSReadLineRepaint(Type type, FieldInfo field, FieldInfo waiting, MethodInfo render) {
@@ -23,6 +24,13 @@ internal sealed class PSReadLineRepaint {
             editor).Compile();
         if (type.GetField("_initialY", Instance) is { } row && row.FieldType == typeof(int)) {
             initialRow = Expression.Lambda<Func<object, int>>(Expression.Field(instance, row), editor).Compile();
+        }
+        if (type.GetField("_readLineReady", Instance) is { FieldType: var readyType } ready && readyType == typeof(bool) &&
+            type.GetField("_inputAccepted", Instance) is { FieldType: var acceptedType } accepted && acceptedType == typeof(bool) &&
+            type.GetField("_visualSelectionCommandCount", Instance) is { FieldType: var selectionType } selection && selectionType == typeof(int)) {
+            isEditing = Expression.Lambda<Func<object, bool>>(
+                Expression.AndAlso(Expression.AndAlso(Expression.Field(instance, ready), Expression.Not(Expression.Field(instance, accepted))),
+                    Expression.Equal(Expression.Field(instance, selection), Expression.Constant(0))), editor).Compile();
         }
         Repaint = TryRepaint;
     }
@@ -42,6 +50,19 @@ internal sealed class PSReadLineRepaint {
     });
 
     internal Func<bool> Repaint { get; }
+
+    // ReadLine can still own the stack after AcceptLine has cleared predictions and moved
+    // to the output row. A timer must not restore input or predictions in that interval.
+    // Completion menus also own a visual selection and their own rendering loop.
+    internal bool IsEditing() {
+        if (isEditing is null) { return false; }
+        try {
+            return getSingleton() is { } editor && isEditing(editor);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException) {
+            return false;
+        }
+    }
 
     internal int? GetInitialRow() {
         if (initialRow is null) {

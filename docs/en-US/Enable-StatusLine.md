@@ -26,7 +26,8 @@ Enable-StatusLine [[-Block] <Object[]>] [-Left <Object[]>] [-Center <Object[]>] 
  [-BlockTimeoutMilliseconds <int>] [-UpdateDuringCommand] [-TextContrast <TextContrastMode>]
  [-Style <SegmentStyle>] [-IconSet <IconSet>] [-BlockSeparator] [-Padding <string>]
  [-Force] [-Target <StatusLineTarget>] [-OutputPath <string>] [-WeatherLocation <string>]
- [-BlendBackground] [-DirectoryDepth <int>] [-WhatIf] [-Confirm] [<CommonParameters>]
+ [-BlendBackground] [-DirectoryDepth <int>] [-CompletionMessageThresholdMilliseconds <int>]
+ [-WhatIf] [-Confirm] [<CommonParameters>]
 ```
 
 ## ALIASES
@@ -609,6 +610,27 @@ AcceptedValues: []
 HelpMessage: ''
 ```
 
+
+### -CompletionMessageThresholdMilliseconds
+
+Show a four-second completion or failure message for commands reaching this duration. Zero (default) disables automatic messages. Automatic duration messages require Enable-Prompt.
+
+```yaml
+Type: System.Int32
+DefaultValue: 0
+SupportsWildcards: false
+Aliases: []
+ParameterSets:
+- Name: (All)
+  Position: Named
+  IsRequired: false
+  ValueFromPipeline: false
+  ValueFromPipelineByPropertyName: false
+  ValueFromRemainingArguments: false
+DontShow: false
+AcceptedValues: []
+HelpMessage: ''
+```
 
 ## INPUTS
 

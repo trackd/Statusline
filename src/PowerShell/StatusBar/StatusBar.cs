@@ -5,6 +5,12 @@ namespace StatusLine;
 
 /// <summary>Read or update the running statusline without restarting its worker.</summary>
 public static class StatusBar {
+    /// <summary>Temporarily replaces the status row, then restores its configured blocks.</summary>
+    public static void ShowMessage(string text, int durationMilliseconds = 4000) =>
+        StatusLineUpdater.ShowMessage(text, durationMilliseconds);
+
+    /// <summary>Restores the configured status row immediately.</summary>
+    public static void ClearMessage() => StatusLineUpdater.ClearMessage();
     public static StatusBarConfiguration? Configuration => StatusLineUpdater.GetConfiguration();
     /// <summary>Live PowerShell property view; target/path remain lifecycle settings.</summary>
     public static System.Management.Automation.PSObject? Settings {

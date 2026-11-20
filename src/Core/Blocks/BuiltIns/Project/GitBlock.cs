@@ -6,9 +6,9 @@ using static StatusLine.Blocks.Execution.BlockFormatting;
 
 namespace StatusLine.Blocks.BuiltIns.Project;
 
-internal sealed class GitBlock : IRefreshingBlock {
+internal class GitBlock(bool detailed = false) : IRefreshingBlock {
     private static readonly RefreshCache<(GitRepository Repository, string Environment), string?> OriginCache = new(128);
-    public BlockMetadata Metadata { get; } = new(StatusLineBlockKind.Git, StatusLineAlignment.Left, ("\U000F062C", "⎇", "git"), Facts: SessionFacts.Location);
+    public BlockMetadata Metadata { get; } = new(detailed ? StatusLineBlockKind.GitDetailed : StatusLineBlockKind.Git, StatusLineAlignment.Left, ("\U000F062C", "⎇", "git"), Facts: SessionFacts.Location);
 
     public TimeSpan Interval => TimeSpan.FromSeconds(2);
     public CollectionScope Scope(BlockContext context) => new(context.State.FileSystemPath ?? string.Empty, ProviderEnvironment.Fingerprint);
@@ -21,7 +21,35 @@ internal sealed class GitBlock : IRefreshingBlock {
 
         GitStatus? status = await GitStatusProvider.ReadStatusAsync(repository, token).ConfigureAwait(false);
         return new CollectedBlock(set => Format(branch, status, set),
-            (presentation, content) => WithOriginIcon(repository, presentation, content));
+            (presentation, content) => WithOriginIcon(repository, presentation,
+                (detailed || presentation.DetailedGit) && status is not null ? FormatDetailed(branch, status, presentation.IconSet) : content));
+    }
+
+    internal BlockContent FormatDetailed(string branch, GitStatus status, IconSet set) {
+        var builder = new StringBuilder(branch);
+        var counters = Counters(set);
+        AppendCount(builder, counters.Ahead, status.Ahead);
+        AppendCount(builder, counters.Behind, status.Behind);
+        AppendChanges(builder, set == IconSet.NerdFont ? " " : " work", status.Working);
+        AppendChanges(builder, set == IconSet.NerdFont ? " " : " staged", status.Index);
+        AppendCount(builder, "!", status.Conflicts);
+        AppendCount(builder, "stash:", status.Stash);
+        if (status.Operation is { } operation) {
+            builder.Append(' ').Append(operation);
+        }
+        return new(Metadata.Icon(set), builder.ToString(), Metadata.Alignment,
+            status.Conflicts > 0 ? Red : status.IsDirty ? Yellow : Green);
+    }
+
+    private static void AppendChanges(StringBuilder builder, string label, GitChanges changes) {
+        if (!changes.Changed) {
+            return;
+        }
+        builder.Append(label);
+        AppendCount(builder, "+", changes.Added);
+        AppendCount(builder, "~", changes.Modified);
+        AppendCount(builder, "-", changes.Deleted);
+        AppendCount(builder, ">", changes.Renamed);
     }
 
     private BlockContent? Format(string branch, GitStatus? status, IconSet set) {

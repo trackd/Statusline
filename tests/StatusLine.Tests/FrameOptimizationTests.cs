@@ -60,6 +60,42 @@ public sealed class FrameOptimizationTests {
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ResizeRepaintsEvenWhenStatusTextDoesNotChange(bool contour) {
+        var output = new StatusLineOutput(Options() with {
+            Style = SegmentStyle.Plain, BlendBackground = false, StartColor = Color.Empty, EndColor = Color.Empty,
+        }, contour, CancellationToken.None);
+        StatusLineBlock[] blocks = [];
+        Assert.True(output.Render(blocks, 80, StatusLineFraming.HostWritable));
+        string frame = output.Frame.ToString();
+        Assert.False(output.Render(blocks, 80, StatusLineFraming.HostWritable));
+        Assert.True(output.Render(blocks, 60, StatusLineFraming.HostWritable));
+        // Contour pads an empty frame to its width; other terminals emit identical bytes.
+        if (contour) {
+            Assert.Equal(80, frame.Count(character => character == ' '));
+            Assert.Equal(60, output.Frame.ToString().Count(character => character == ' '));
+        }
+        else {
+            Assert.Equal(frame, output.Frame.ToString());
+        }
+        Assert.False(output.Render(blocks, 60, StatusLineFraming.HostWritable));
+        Assert.True(output.Render(blocks, 100, StatusLineFraming.HostWritable));
+    }
+
+    [Fact]
+    public void ResizeInvalidationSurvivesWidthReturningBeforeTheNextFrame() {
+        var output = new StatusLineOutput(Options(), CancellationToken.None);
+        int originalWidth = Terminal.Width + 1;
+        Assert.True(output.Render([], originalWidth, StatusLineFraming.HostWritable));
+        Assert.False(output.Render([], originalWidth, StatusLineFraming.HostWritable));
+        // The foreground sees a different native width before the worker redraws.
+        output.FlushPending();
+        // The next request returns to the original width and still needs a repaint.
+        Assert.True(output.Render([], originalWidth, StatusLineFraming.HostWritable));
+    }
+
     [Fact]
     public void FrameReuseInvalidatesOnRenderingInputs() {
         UpdaterOptions options = Options();

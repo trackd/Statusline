@@ -13,18 +13,23 @@ internal sealed class StatusLineOutput {
     private readonly StringBuilder scratch = new(1024);
     private readonly FrameBuffer frame = new();
     private BlockGradientCache gradient;
-    private bool contour = Terminal.IsContour;
+    private bool contour;
     private bool initialized;
     private bool hostPending;
+    private bool resizePending;
     private UpdaterOptions? renderedOptions;
     private StatusLineBlock[] renderedBlocks = [];
     private int renderedWidth;
     private bool renderedUnicode;
     private StatusLineFraming renderedFraming;
 
-    public StatusLineOutput(UpdaterOptions options, CancellationToken token) {
+    public StatusLineOutput(UpdaterOptions options, CancellationToken token) : this(options, Terminal.IsContour, token) {
+    }
+
+    internal StatusLineOutput(UpdaterOptions options, bool contour, CancellationToken token) {
         this.options = options;
         this.token = token;
+        this.contour = contour;
         gradient = new(options.StartColor, options.EndColor, options.Style);
     }
 
@@ -88,9 +93,15 @@ internal sealed class StatusLineOutput {
         }
     }
 
-    // Called on the foreground runspace, while PSReadLine is processing an idle event.
+    // Called on the foreground runspace, while PSReadLine is processing a refresh event.
     internal void FlushPending() {
         lock (StatusLineUpdater.OutputGate) {
+            if (renderedOptions is not null && renderedWidth != Terminal.Width) {
+                hostPending = false;
+                resizePending = true;
+                StatusLineUpdater.RefreshAfterResize();
+                return;
+            }
             if (hostPending && StatusLineUpdater.CanDrawHost(options, token)) {
                 WriteHost();
             }
@@ -111,10 +122,11 @@ internal sealed class StatusLineOutput {
         hostPending = false;
     }
 
-    /// <summary>Renders into the frame buffer; returns whether the frame content changed.</summary>
+    /// <summary>Renders into the frame buffer; returns whether the frame needs writing.</summary>
     internal bool Render(IReadOnlyList<StatusLineBlock> blocks, int width, StatusLineFraming framing) {
         bool unicode = TextMeasurement.UseUnicode;
-        if (IsRendered(blocks, width, unicode, framing)) {
+        bool widthChanged = resizePending || renderedOptions is not null && renderedWidth != width;
+        if (!widthChanged && IsRendered(blocks, width, unicode, framing)) {
             return false;
         }
 
@@ -135,7 +147,9 @@ internal sealed class StatusLineOutput {
         renderedWidth = width;
         renderedUnicode = unicode;
         renderedFraming = framing;
-        return frame.Update(scratch);
+        resizePending = false;
+        bool contentChanged = frame.Update(scratch);
+        return widthChanged || contentChanged;
     }
 
     private bool IsRendered(IReadOnlyList<StatusLineBlock> blocks, int width, bool unicode, StatusLineFraming framing) {

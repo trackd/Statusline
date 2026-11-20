@@ -82,6 +82,7 @@ internal sealed class BlockBinding {
                 PreserveBackground = current.Background is not null,
                 UseOrdinaryLeadingSpace = duration,
                 Shrinkable = shrinkable,
+                Priority = current.Priority,
             };
             rendered = error is null ? block : block.AsStale(error);
             previous = data;

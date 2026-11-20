@@ -72,6 +72,8 @@ public sealed class StatusLineBlock {
 
     /// <summary>Glyph drawn before the text, separated by a space.</summary>
     public string Icon { get; }
+    /// <summary>Higher values keep a block visible longer when the row is crowded.</summary>
+    public int Priority { get; internal init; }
 
     public TerminalColor Foreground { get; }
 
@@ -127,6 +129,7 @@ public sealed class StatusLineBlock {
         PreserveBackground = PreserveBackground,
         UseOrdinaryLeadingSpace = UseOrdinaryLeadingSpace,
         Shrinkable = Shrinkable,
+        Priority = Priority,
         IsStale = true,
         LastError = error
     };
@@ -147,6 +150,7 @@ public sealed class StatusLineBlock {
             PreserveForeground = PreserveForeground,
             PreserveBackground = PreserveBackground,
             UseOrdinaryLeadingSpace = UseOrdinaryLeadingSpace,
+            Priority = Priority,
             IsStale = IsStale,
             LastError = LastError
         };
@@ -159,6 +163,7 @@ public sealed class StatusLineBlock {
         TerminalColor background, string padding, bool bold, bool italic, bool underline) {
         Text = source.Text;
         Icon = source.Icon;
+        Priority = source.Priority;
         iconSeparator = source.iconSeparator;
         Content = source.Content;
         unicodeMeasurement = TextMeasurement.UseUnicode;
